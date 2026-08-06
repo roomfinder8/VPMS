@@ -1,0 +1,11 @@
+# Normalise line endings so the repo stays LF regardless of who checks it out.
+# Without this, editing on Windows rewrites whole files as CRLF and every diff
+# looks like the entire file changed.
+* text=auto eol=lf
+
+# Binary files git must not touch
+*.xlsx binary
+*.ico  binary
+*.png  binary
+*.jpg  binary
+*.webp binary

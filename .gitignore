@@ -1,0 +1,23 @@
+# Keep generated and secret files out of git
+node_modules/
+.next/
+out/
+build/
+.vercel/
+*.tsbuildinfo
+
+.env
+.env.*
+!.env.local.example
+
+# Windows / Drive
+Thumbs.db
+desktop.ini
+.DS_Store
+*.tmp
+
+# scratch
+/tmp/
+
+# Claude Code permission grants are per-machine (they contain absolute paths)
+.claude/settings.local.json

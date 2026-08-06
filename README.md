@@ -1,0 +1,315 @@
+# VPMS — Visitor Parking Validation Management System
+
+Visitor log and daily parking-validation report for the **ETTP Unit**.
+
+---
+
+## 1. Context and constraints
+
+The **MeeSoft** stamping device in the unit is **completely offline** — it is plugged
+into power and nothing else. No network, no PC, no notebook. There is no way to read
+data out of it, and there never will be.
+
+How the process works today:
+
+1. Power on the device, tap the authorised card
+2. Press the validation code (1 = free 2 hrs, 2 = free 4 hrs; there may be more codes —
+   **not yet confirmed**)
+3. Tap the visitor's parking card to write the validation onto it
+4. The visitor returns the card at the exit, where the building's own system charges them
+
+**What follows from that:** VPMS is not connected to the stamping device and cannot be.
+Every row comes from someone typing it in, so **this app is the only source of truth** —
+and the first goal of the UI is that logging a visitor is **faster than writing it on
+paper**. If it is slower, it stops being used.
+
+---
+
+## 2. Folder layout
+
+```
+vpms/
+├─ README.md                ← this file (all design decisions)
+├─ .gitignore
+├─ supabase/
+│  └─ migrations/
+│     ├─ 0001_init.sql                             schema + RLS + triggers
+│     ├─ 0002_seed_and_views.sql                   seed data + reporting view
+│     ├─ 0003_username_lowercase_and_company_counter.sql
+│     ├─ 0004_harden_functions_and_extensions.sql  security-advisor fixes
+│     └─ 0005_english_labels_and_comments.sql
+└─ web/                     Next.js 16 + React 19 + Tailwind 4
+   └─ .env.local.example
+```
+
+Supabase project: **VPMS** (`qanyeqnqujqowbvdjpon`), in the same organisation as
+RoomFinder but a separate project with its own database and its own user accounts.
+
+---
+
+## 3. ⏰ Time zone policy — read before touching anything time related
+
+This is what breaks most often in systems like this. The rule is: **convert in exactly
+one place, never twice.**
+
+| Layer | Rule |
+|---|---|
+| **Storage** | every time column is `timestamptz`, which Postgres stores as UTC. Never plain `timestamp`. |
+| **Date of a visit** | `visits.visit_date` is a generated column holding the **Thailand-local** date, not the UTC one. With the UTC date, anything before 07:00 local lands on the previous day's report. |
+| **Writing** | send `check_in_at` as an ISO string with an offset (`toISOString()`), never a bare `"YYYY-MM-DD HH:mm"` that could be read several ways. |
+| **Manual time edits** | what the user types is Thailand time, so it must be assembled into an instant with an explicit `+07:00`. Never rely on `new Date("2026-08-06T09:15")`, which uses the device's zone. |
+| **Display** | always format with `Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Bangkok' })`. Never trust the device zone — a phone set wrong, or a laptop taken abroad, must still show the same clock time. |
+| **Reports / Excel** | read from the `public.visits_report` view, which has already converted to local time. Do not convert again. |
+| **Cron** | schedules are UTC: 17:30 Thailand = **10:30 UTC**. |
+
+**Why `visit_date` hardcodes `+07:00` instead of `'Asia/Bangkok'`:** generated columns
+only accept `IMMUTABLE` expressions. Converting by *zone name* is `STABLE` (the tz
+database can be updated) and is rejected; converting by *interval* is `IMMUTABLE` and is
+accepted. Thailand is a fixed UTC+7 and has never observed DST, so this is safe. Views
+have no such restriction and use the zone name for clarity.
+
+This was verified against the live database across five boundary cases — a naive UTC
+date got three of the five wrong.
+
+---
+
+## 4. Data model
+
+| Table | Purpose |
+|---|---|
+| `profiles` | mirror of `auth.users` — `username`, `email`, `full_name`, `role` |
+| `validation_types` | the codes on the MeeSoft device (id = the number actually pressed), editable from settings |
+| `companies` | company lookup, created on the fly, drives autocomplete |
+| `hosts` | ETTP staff who receive visitors |
+| `visits` | **the main table** — in/out, validation, card no., host |
+| `report_settings` | single row: recipients, send time, send days |
+| `report_runs` | log of every report email sent |
+| `visits_report` (view) | visits with local times — the single source for Excel and email |
+
+**Roles:** `admin` (everything, incl. settings and user management) · `user` (logs, edits
+and checks out visits). Both roles may write — the split is only about administration.
+
+**Sessions** last until the user presses Sign out. That needs two things to agree: the auth
+cookie carries an explicit 400-day `maxAge` (see `lib/supabase/cookies.ts`), and the Supabase
+project must leave *Authentication → Sessions → Time-box user sessions* and *Inactivity
+timeout* empty. Without the cookie lifetime it would be a session cookie, which a phone
+can drop whenever the OS reclaims the browser.
+
+**Decisions worth knowing:**
+
+- `visits.company_name` / `host_name` keep a snapshot next to the foreign key, so renaming
+  a company later does not rewrite reports that were already sent
+- `parking_card_no` and `license_plate` **have fields but are not required** — they are
+  the only way to trace a charge back if the building's invoice ever needs reconciling
+- `visitor_count` — one car, one stamp, several people
+- `auto_closed` — visits nobody checked out get closed by the end-of-day job and
+  **flagged**, rather than quietly disappearing
+
+### Validation types
+
+Three codes are seeded — 1 = 2 hrs, 2 = 4 hrs, 3 = all day — where the id is the key
+actually pressed on the MeeSoft device. They are marked `is_confirmed = false` because
+nobody has verified them with building management yet; the flag is recorded but not
+surfaced in the UI. Codes can be added, edited or removed from settings without a migration.
+
+A fourth slot, **Custom** (`is_custom = true`, id 99), asks for the number of free hours on
+each visit and stores it in `visits.custom_free_hours`. Use it for one-off arrangements, or
+for a code the building introduces before anyone has added it properly. Its id is outside
+the device-key range on purpose — it is not a key anyone presses, and the report leaves
+`validation_code` null for those rows while showing "Custom 6.5 hrs" as the label.
+
+### Extending a visit
+
+A meeting overruns, the visitor comes back to the desk and gets re-stamped for longer.
+Press **Edit** on the row and pick the new validation — the record always reflects the
+final validation the visitor left with, which is what the cost is based on. The app keeps
+no history of the earlier value; add one if it ever needs auditing.
+
+---
+
+## 5. Reports and email
+
+### Flow
+
+```
+every 15 min   pg_cron ──► /api/cron/daily-report
+                           ├─ is it a send day, and has the send time passed?
+                           ├─ has today's report already gone out?   → skip
+                           ├─ close visits nobody checked out (flagged)
+                           ├─ build the Excel file from visits_report
+                           └─ email it to the reviewer, with the file attached
+                                     │
+                           she checks it, fixes anything in the app,
+                           then writes to the manager from her own mailbox
+```
+
+**The system emails exactly one person: the reviewer.** It never writes to the manager —
+a report landing in the manager's inbox straight from a personal Gmail account was never
+going to look right, and the numbers deserve a human glance first either way. There is a
+**Send now** button for sending it earlier, or again after a correction.
+
+Every attempt is written to `report_runs` (when, who triggered it, to whom, sent / failed /
+skipped and why), so "did today's report go out?" always has an answer.
+
+### Why the schedule is every 15 minutes
+
+The endpoint decides for itself whether the report is due, rather than trusting the clock
+that woke it. That buys three things: the send time lives in `report_settings` and can be
+changed from the Settings page without touching the cron entry; a run missed while the app
+was down still goes out on the next tick; and calling the endpoint twice cannot send twice,
+because a successful run for that date makes the next call skip.
+
+`?force=1` bypasses the day, time and already-sent checks for testing.
+
+### The Excel file
+
+`GET /api/export/visits?from=YYYY-MM-DD&to=YYYY-MM-DD` (requires a signed-in session; both
+default to today, `?date=` is accepted as a single-day shorthand). Ranges longer than 366
+days are refused so one request cannot pull the whole table. The file is named
+`VPMS-ETTP-visitors-<date>.xlsx` for a single day and
+`VPMS-ETTP-visitors-<from>_to_<to>.xlsx` for a range.
+
+The **Export Excel** button opens a panel with quick ranges — Today, Yesterday, This week,
+This month, Last month, Last 30 days — plus From/To pickers for anything else. All the date
+maths runs through `lib/tz.ts`, anchored at midday Thailand time so adding days can never
+tip a value across a date boundary.
+
+- sheet **`Details`** — no. / date / time in / time out / duration / visitor / people /
+  company / host / validation / free hrs / card no. / plate / purpose / status / logged by,
+  with a frozen header and an autofilter
+- sheet **`Summary`** — totals, by day (ranges only), by validation, by host, by company,
+  and a **Needs attention** block counting anything still in, estimated or missing an exit.
+  This is the sheet the manager actually reads.
+
+Times are written as `HH:mm` **text**, already converted to Thailand time by the view.
+Writing them as real Excel times would make the file render differently depending on the
+reader's machine, which is the one thing this report cannot afford.
+
+`npx tsx scripts/preview-report.ts [out.xlsx]` renders a sample workbook covering every
+status, so the layout can be checked without signing in or seeding data. Set
+`PREVIEW_FROM` / `PREVIEW_TO` to preview the multi-day layout.
+
+### Visits nobody checked out
+
+At the end of the day `private.close_open_visits(date)` closes whatever is still open:
+
+- the exit time becomes **check-in + the free hours that were stamped** — a rule that can
+  be explained, rather than an arbitrary cutoff
+- `auto_closed` stays true, so the row reports as **estimated** rather than posing as a
+  time somebody actually recorded
+- **Free all day** has no hour count, so nothing can be derived: the exit stays empty and
+  the row reports as **no check-out**
+
+Either way the secretary can still Edit the row and enter the real time afterwards.
+Four statuses come out of this: `in`, `out`, `estimated`, `no_checkout`.
+
+### Sending via Gmail
+
+**Gmail SMTP + nodemailer** from `roomfinder8888@gmail.com`.
+
+The sender authenticates with a **16-character App Password**, not the normal Gmail password:
+
+1. Turn on 2-Step Verification for `roomfinder8888@gmail.com`
+2. Create an App Password at <https://myaccount.google.com/apppasswords>
+3. Put it in `GMAIL_APP_PASSWORD` in `.env.local` and in the Vercel environment variables
+
+**Recipients are not hardcoded** — they live in `report_settings.draft_recipients` and are
+edited from the Settings page (admin only).
+
+Worth knowing: Gmail allows roughly 500 messages a day, far more than needed, and mail from
+a `@gmail.com` address can land in a corporate spam folder — the first one may need to be
+marked "not spam" once.
+
+`npx tsx scripts/preview-email.ts [out.html]` renders the message to a file so the layout
+can be checked without sending anything to anybody.
+
+### Turning the schedule on
+
+`pg_cron` and `pg_net` are installed, but nothing is scheduled until the app has a public
+URL. After deploying, run this once with the real values:
+
+```sql
+select private.schedule_daily_report('https://your-app.vercel.app', '<CRON_SECRET>');
+```
+
+and `select private.unschedule_daily_report();` to stop it. Default schedule is
+**Mon–Fri, 17:30 Thailand time**, both changeable from Settings.
+
+---
+
+## 6. Multi-device support
+
+The secretary works at a desk but walks over to the stamping device, so logging from a
+phone has to work properly.
+
+- **Phone (< 640px)** — visits render as cards, a floating "＋ Add" button sits bottom
+  right, tap targets are ≥ 44px, the form is a full-height bottom sheet
+- **Tablet / desktop** — wider rows, the form is a centred modal
+- Validation is picked with **three large buttons**, not a dropdown — one tap on any device
+- Numeric fields use `inputMode="numeric"` so phones show the number pad
+- The manager can open the same app on a phone in `viewer` mode
+
+The UI is English, but visitor and company names are frequently typed in Thai, so the font
+(Noto Sans Thai) deliberately covers both scripts.
+
+---
+
+## 7. Running it
+
+```bash
+cd web && npm install && npm run dev
+```
+
+Before the first run:
+
+1. copy `web/.env.local.example` to `web/.env.local` and fill in the values
+2. apply the migrations in `supabase/migrations/` in order (already applied to the VPMS project)
+3. create accounts — there is no public signup. Add the user in the Supabase dashboard
+   (Authentication → Add user), then insert the matching `public.profiles` row with a
+   **lowercase** username and a role.
+
+> If you ever create a user by writing to `auth.users` directly instead of using the
+> dashboard, set `confirmation_token`, `recovery_token`, `email_change` and
+> `email_change_token_new` to `''` rather than leaving them NULL. GoTrue reads them into
+> Go strings and a NULL makes every sign-in attempt fail with HTTP 500 — which looks
+> exactly like a broken password, not a broken row.
+
+---
+
+## 8. Status
+
+Done:
+
+- database schema, RLS, triggers, reporting view — applied to the VPMS project,
+  security advisor clean (0 warnings)
+- login (username → email → Supabase auth), route protection, sign-out
+- the Today board: add / edit / check out / undo / delete, autocomplete, per-day summary
+- the three ways a visit actually gets logged, all verified end to end:
+  1. **all at once** when the visitor leaves — fill in both Time in and Time out
+  2. **before the meeting** — Time in only, then **Check out now** stamps the current
+     time in one tap (**Undo check-out** clears it again if the wrong row was tapped)
+  3. **extended** — Edit and pick a longer validation, including Custom hours
+
+- Excel export — `/api/export/visits`, single day or any range, with quick-range presets
+- `private.close_open_visits(date)` for visits nobody checked out
+
+- the daily report email — Gmail SMTP, Excel attached, **Send now** button, every attempt
+  logged in `report_runs`
+- the schedule — `pg_cron` every 15 min into `/api/cron/daily-report`, which closes open
+  visits and then sends if the report is due
+- Settings page (admin) — recipient, send time, send days, and the two toggles
+
+Not built yet:
+
+- History / search across past days
+- Settings for validation types and hosts (still SQL-only)
+- user management (accounts are created in the Supabase dashboard)
+
+## 9. Open questions
+
+- [ ] how many validation codes the MeeSoft device really has, and the value of each —
+      needs building management
+- [ ] the list of ETTP staff for the host dropdown
+- [ ] the manager's email address (can be added from settings later)
+- [ ] after the first month of real use, get the building's parking invoice and compare it
+      against the report to see whether the numbers line up

@@ -1,0 +1,49 @@
+@import "tailwindcss";
+
+@theme inline {
+  --font-sans: var(--font-noto-thai), ui-sans-serif, system-ui, sans-serif;
+
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-ink-faint: var(--ink-faint);
+  --color-surface: var(--surface);
+  --color-raised: var(--raised);
+  --color-line: var(--line);
+  --color-brand: var(--brand);
+  --color-brand-soft: var(--brand-soft);
+}
+
+:root {
+  --surface: #f5f6f8;
+  --raised: #ffffff;
+  --ink: #16181d;
+  --ink-soft: #555964;
+  --ink-faint: #8b8f9a;
+  --line: #e3e5ea;
+  --brand: #1f6feb;
+  --brand-soft: #e8f0fe;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --surface: #0e1013;
+    --raised: #16191e;
+    --ink: #eceef2;
+    --ink-soft: #a4a9b4;
+    --ink-faint: #6e7480;
+    --line: #262a31;
+    --brand: #4d8dff;
+    --brand-soft: #16233a;
+  }
+}
+
+body {
+  background: var(--surface);
+  color: var(--ink);
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Fixed-width digits so times keep their alignment and rows do not jump on re-render */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
