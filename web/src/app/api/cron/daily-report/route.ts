@@ -126,17 +126,24 @@ async function handle(request: Request) {
       } satisfies Outcome);
     }
 
+    // Only a previous *scheduled* run counts as "already sent".
+    //
+    // triggered_by is null exactly when the schedule sent it; a person pressing
+    // Send now stamps their own id. Counting manual sends here would mean that
+    // asking for the numbers at two in the afternoon silently cancels the real
+    // end-of-day report, and nobody would notice until the day was over.
     const { data: already } = await admin
       .from("report_runs")
       .select("id")
       .eq("report_date", date)
       .eq("status", "sent")
+      .is("triggered_by", null)
       .limit(1);
 
     if (already && already.length > 0) {
       return Response.json({
         status: "skipped",
-        reason: "today's report has already been sent",
+        reason: "the scheduled report for today has already been sent",
         date,
       } satisfies Outcome);
     }
