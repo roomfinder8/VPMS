@@ -25,14 +25,11 @@ import {
   formatHours,
   validationLabel,
   visitStatus,
-  type Company,
-  type Host,
   type ReportRun,
-  type ReportSettings,
-  type ValidationType,
   type Visit,
   type VisitFormValues,
 } from "@/lib/types";
+import { useBoardData } from "./board-data-context";
 import { DateNav } from "./date-nav";
 import { ExportPanel } from "./export-panel";
 import { ReportCard } from "./report-card";
@@ -61,15 +58,7 @@ interface Props {
   /** the real current date, for nav bounds and "Check out now" gating */
   today: string;
   visits: Visit[];
-  validationTypes: ValidationType[];
-  hosts: Host[];
-  companies: Company[];
-  vehicleBrands: string[];
-  approverNames: string[];
-  settings: ReportSettings;
   runs: ReportRun[];
-  editable: boolean;
-  isAdmin: boolean;
 }
 
 function emptyForm(
@@ -121,20 +110,18 @@ function toForm(visit: Visit): VisitFormValues {
   };
 }
 
-export function TodayBoard({
-  date,
-  today,
-  visits,
-  validationTypes,
-  hosts,
-  companies,
-  vehicleBrands,
-  approverNames,
-  settings,
-  runs,
-  editable,
-  isAdmin,
-}: Props) {
+export function TodayBoard({ date, today, visits, runs }: Props) {
+  const {
+    validationTypes,
+    hosts,
+    companies,
+    vehicleBrands,
+    approverNames,
+    settings,
+    editable,
+    isAdmin,
+  } = useBoardData();
+
   const [sheet, setSheet] = useState<VisitFormValues | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);

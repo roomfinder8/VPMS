@@ -59,6 +59,7 @@ export function VisitSheet({
   const [errorField, setErrorField] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
+  const formId = useId();
   const companyListId = useId();
   const hostListId = useId();
   const vehicleListId = useId();
@@ -140,11 +141,14 @@ export function VisitSheet({
         role="dialog"
         aria-modal="true"
         aria-label={isEdit ? "Edit visit" : "Add visitor"}
-        className="max-h-[92dvh] w-full overflow-y-auto rounded-t-2xl bg-raised
-                   sm:max-w-lg sm:rounded-2xl sm:shadow-xl"
+        className="flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-2xl bg-raised
+                   sm:max-w-2xl sm:rounded-2xl sm:shadow-xl"
       >
-        <div className="sticky top-0 z-10 flex items-center justify-between
-                        border-b border-line bg-raised px-4 py-3">
+        {/* Header and footer are fixed flex children, not scroll-following
+            "sticky" elements, so Save is never a scroll away regardless of
+            how long the form gets. */}
+        <div className="flex shrink-0 items-center justify-between
+                        border-b border-line px-4 py-3">
           <h2 className="font-semibold">
             {isEdit ? "Edit visit" : "Add visitor"}
           </h2>
@@ -157,7 +161,11 @@ export function VisitSheet({
           </button>
         </div>
 
-        <form onSubmit={submit} className="flex flex-col gap-5 p-4">
+        <form
+          id={formId}
+          onSubmit={submit}
+          className="flex flex-1 flex-col gap-5 overflow-y-auto p-4"
+        >
           {/* ===== Visit ===== */}
           <div className="flex flex-col gap-4">
             <GroupLabel>Visit</GroupLabel>
@@ -443,27 +451,28 @@ export function VisitSheet({
             </p>
           )}
 
-          <div className="sticky bottom-0 -mx-4 -mb-4 flex gap-3 border-t border-line
-                          bg-raised px-4 py-3">
-            <button
-              type="button"
-              onClick={onClose}
-              className="h-12 flex-1 rounded-xl border border-line font-medium text-ink-soft
-                         transition hover:bg-surface"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={pending}
-              className="h-12 flex-[2] rounded-xl bg-brand font-medium text-white
-                         transition hover:brightness-110 active:scale-[0.98]
-                         disabled:opacity-60"
-            >
-              {pending ? "Saving…" : isEdit ? "Save changes" : "Save"}
-            </button>
-          </div>
         </form>
+
+        <div className="flex shrink-0 gap-3 border-t border-line px-4 py-3">
+          <button
+            type="button"
+            onClick={onClose}
+            className="h-12 flex-1 rounded-xl border border-line font-medium text-ink-soft
+                       transition hover:bg-surface"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            form={formId}
+            disabled={pending}
+            className="h-12 flex-[2] rounded-xl bg-brand font-medium text-white
+                       transition hover:brightness-110 active:scale-[0.98]
+                       disabled:opacity-60"
+          >
+            {pending ? "Saving…" : isEdit ? "Save changes" : "Save"}
+          </button>
+        </div>
       </div>
     </div>
   );

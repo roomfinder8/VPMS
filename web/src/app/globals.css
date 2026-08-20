@@ -43,6 +43,20 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 
+/*
+ * Native form controls (the calendar icon on <input type="date">, the clock
+ * icon on <input type="time">) are drawn by the browser itself and otherwise
+ * default to a dark icon, which disappears against this app's dark theme.
+ * "light dark" tells the browser both palettes exist and to pick the one
+ * matching the user's system/browser preference - the same signal this
+ * stylesheet already follows via prefers-color-scheme, so the icon always
+ * lands on the readable colour.
+ */
+input[type="date"],
+input[type="time"] {
+  color-scheme: light dark;
+}
+
 /* Fixed-width digits so times keep their alignment and rows do not jump on re-render */
 .tabular {
   font-variant-numeric: tabular-nums;

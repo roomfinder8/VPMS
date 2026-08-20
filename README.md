@@ -320,12 +320,41 @@ phone has to work properly.
 
 - **Phone (< 640px)** — visits render as cards, a floating "＋ Add" button sits bottom
   right, tap targets are ≥ 44px, the form is a full-height bottom sheet
-- **Tablet / desktop** — wider rows, the form is a centred modal
+- **Tablet / desktop** — wider rows, the form is a centred modal, widened to `max-w-2xl` so
+  filling it in needs less scrolling
 - Validation is picked with **three large buttons**, not a dropdown — one tap on any device
 - Numeric fields use `inputMode="numeric"` so phones show the number pad
+- The Add/Edit sheet's header and Cancel/Save footer are fixed flex children, not
+  `sticky`-within-scroll elements — only the fields in between scroll, so Save is never a
+  scroll away no matter how long the form gets (verified: scrolling the field area all the
+  way down leaves the Save button at the exact same screen position)
+- Native `<input type="date">` / `type="time">` icons get `color-scheme: light dark` in
+  `globals.css`, or the browser draws them in a fixed dark colour that disappears against
+  this app's dark theme
 
 The UI is English, but visitor and company names are frequently typed in Thai, so the font
 (Noto Sans Thai) deliberately covers both scripts.
+
+### Why date navigation doesn't refetch everything
+
+`(main)/layout.tsx` fetches everything that does **not** depend on which day is on screen —
+validation types, hosts, companies, vehicle brands, approver names, report settings — once,
+and hands it down through `board-data-context.tsx` (`useBoardData()`). `(main)/page.tsx`
+only fetches the two queries that actually vary with the date: `visits` and `report_runs`.
+
+This matters because Next.js does not re-render a layout just because the page's
+`searchParams` changed — confirmed by instrumenting the layout with a one-off log line and
+watching it print exactly once while navigating across four different `?date=` values.
+Before this split, every arrow click on `DateNav` re-ran all eight queries; now it only
+waits on two. `(main)/loading.tsx` and a `useTransition` pending state in `date-nav.tsx`
+cover the remaining round trip with immediate visual feedback (dimmed controls, a small
+spinner) rather than the page appearing to freeze.
+
+The proxy/middleware auth check (`supabase.auth.getUser()` in `src/proxy.ts`) still runs on
+every navigation and was observed taking anywhere from ~150ms to ~750ms in local testing —
+often more than the page's own queries. That's a separate cost from what this section
+fixes; left alone because `getUser()` is what makes the session check trustworthy rather
+than just trusting a cookie (see the comment in `proxy.ts`).
 
 ---
 
