@@ -41,10 +41,17 @@ const inputClass =
   "h-11 w-full rounded-xl border border-line bg-raised px-3 text-base outline-none " +
   "transition focus:border-brand focus:ring-2 focus:ring-brand/25 tabular";
 
-export function ExportPanel({ today }: { today: string }) {
+interface Props {
+  /** actual today, in Thailand time - quick-range presets are always relative to this */
+  today: string;
+  /** the day currently on screen - what the From/To fields start out as */
+  viewedDate: string;
+}
+
+export function ExportPanel({ today, viewedDate }: Props) {
   const [open, setOpen] = useState(false);
-  const [from, setFrom] = useState(today);
-  const [to, setTo] = useState(today);
+  const [from, setFrom] = useState(viewedDate);
+  const [to, setTo] = useState(viewedDate);
 
   useEffect(() => {
     if (!open) return;

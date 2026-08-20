@@ -1,4 +1,4 @@
-import type { VisitStatus } from "@/lib/types";
+import type { ApprovalStatus, VisitStatus } from "@/lib/types";
 
 /**
  * One row of public.visits_report.
@@ -25,8 +25,13 @@ export interface ReportRow {
   value_baht: number | string | null;
   parking_card_no: string | null;
   license_plate: string | null;
+  vehicle_brand: string | null;
   remark: string | null;
   status: VisitStatus;
+  approver_name: string | null;
+  /** 'YYYY-MM-DD' */
+  approved_on: string | null;
+  approval_status: ApprovalStatus;
   created_by_name: string | null;
 }
 
@@ -34,4 +39,5 @@ export const REPORT_COLUMNS =
   "visit_date, time_in, time_out, duration_minutes, duration_hhmm, visitor_name, " +
   "visitor_count, company_name, host_name, purpose, validation_code, " +
   "validation_label, free_hours, value_baht, parking_card_no, license_plate, " +
-  "remark, status, created_by_name, check_in_at";
+  "vehicle_brand, remark, status, approver_name, approved_on, approval_status, " +
+  "created_by_name, check_in_at";

@@ -9,6 +9,34 @@ export type Role = "admin" | "user";
  */
 export type VisitStatus = "in" | "out" | "estimated" | "no_checkout";
 
+export const STATUS_LABEL: Record<VisitStatus, string> = {
+  in: "Still in",
+  out: "Checked out",
+  estimated: "Estimated",
+  no_checkout: "No check-out",
+};
+
+/**
+ * no_approver - nobody has been named yet
+ * awaiting    - named, but the head hasn't confirmed by email yet
+ * approved    - both an approver and a date are on record
+ */
+export type ApprovalStatus = "no_approver" | "awaiting" | "approved";
+
+export const APPROVAL_STATUS_LABEL: Record<ApprovalStatus, string> = {
+  no_approver: "No approver set",
+  awaiting: "Awaiting approval",
+  approved: "Approved",
+};
+
+export function approvalStatus(
+  visit: Pick<Visit, "approver_name" | "approved_on">,
+): ApprovalStatus {
+  if (!visit.approver_name) return "no_approver";
+  if (!visit.approved_on) return "awaiting";
+  return "approved";
+}
+
 export interface Profile {
   id: string;
   username: string;
@@ -58,6 +86,20 @@ export function validationLabel(
   return type.label;
 }
 
+/**
+ * Free-text values (vehicle brand, approver name) with no lookup table behind
+ * them: dedupe and sort what has actually been typed before, to drive an
+ * autocomplete list without inventing a schema for an open set.
+ */
+export function distinctSorted(values: (string | null | undefined)[]): string[] {
+  const seen = new Set<string>();
+  for (const v of values) {
+    const trimmed = v?.trim();
+    if (trimmed) seen.add(trimmed);
+  }
+  return [...seen].sort((a, b) => a.localeCompare(b));
+}
+
 export interface Company {
   id: string;
   name: string;
@@ -89,8 +131,12 @@ export interface Visit {
   custom_free_hours: number | string | null;
   parking_card_no: string | null;
   license_plate: string | null;
+  vehicle_brand: string | null;
   remark: string | null;
   auto_closed: boolean;
+  approver_name: string | null;
+  /** 'YYYY-MM-DD', set once the head confirms */
+  approved_on: string | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;
@@ -100,13 +146,6 @@ export function visitStatus(visit: Visit): VisitStatus {
   if (!visit.check_out_at) return visit.auto_closed ? "no_checkout" : "in";
   return visit.auto_closed ? "estimated" : "out";
 }
-
-export const STATUS_LABEL: Record<VisitStatus, string> = {
-  in: "Still in",
-  out: "Checked out",
-  estimated: "Estimated",
-  no_checkout: "No check-out",
-};
 
 /** What the form submits - times are 'HH:mm' in Thailand time, not yet converted to instants */
 export interface VisitFormValues {
@@ -124,6 +163,11 @@ export interface VisitFormValues {
   customFreeHours: string;
   parkingCardNo: string;
   licensePlate: string;
+  vehicleBrand: string;
+  /** who is expected to approve this visit - free text, can change at short notice */
+  approverName: string;
+  /** 'YYYY-MM-DD' once the head has confirmed by email, else empty */
+  approvedOn: string;
   remark: string;
 }
 

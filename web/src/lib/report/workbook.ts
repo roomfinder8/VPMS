@@ -40,9 +40,11 @@ const COLUMNS: Column[] = [
   },
   { header: "Card no.", width: 12, align: "center", value: (r) => r.parking_card_no ?? "" },
   { header: "Plate", width: 12, align: "center", value: (r) => r.license_plate ?? "" },
-  { header: "Purpose / note", width: 30, value: (r) => r.purpose ?? r.remark ?? "" },
+  { header: "Vehicle", width: 14, value: (r) => r.vehicle_brand ?? "" },
+  { header: "Purpose / note", width: 28, value: (r) => r.purpose ?? r.remark ?? "" },
   { header: "Status", width: 14, align: "center", value: (r) => STATUS_LABEL[r.status] },
-  { header: "Logged by", width: 16, value: (r) => r.created_by_name ?? "" },
+  { header: "Approver", width: 18, value: (r) => r.approver_name ?? "—" },
+  { header: "Approved", width: 12, align: "center", value: (r) => r.approved_on ?? "—" },
 ];
 
 function countBy<K>(rows: ReportRow[], key: (r: ReportRow) => K) {
@@ -152,6 +154,14 @@ function buildDetails(
         (row.status === "estimated" ||
           row.status === "no_checkout" ||
           row.status === "in")
+      ) {
+        cell.font = { size: 10, bold: true, color: { argb: WARN } };
+      }
+      // Same treatment for approval: this sheet doubles as the approval
+      // request, so a row waiting on the head has to stand out here too.
+      if (
+        (col.header === "Approver" || col.header === "Approved") &&
+        row.approval_status !== "approved"
       ) {
         cell.font = { size: 10, bold: true, color: { argb: WARN } };
       }
@@ -282,6 +292,16 @@ function buildSummary(
     dataRow([company, stats.visits, stats.people, ""]);
   }
 
+  const approved = rows.filter((x) => x.approval_status === "approved").length;
+  const awaitingApproval = rows.filter((x) => x.approval_status === "awaiting").length;
+  const noApprover = rows.filter((x) => x.approval_status === "no_approver").length;
+
+  sectionHeading("Approval");
+  tableHeader(["", "Visits", "", ""]);
+  dataRow(["Approved", approved, "", ""]);
+  if (awaitingApproval) dataRow(["Awaiting approval", awaitingApproval, "", ""], true);
+  if (noApprover) dataRow(["No approver set", noApprover, "", ""], true);
+
   // Called out separately so nothing that needs a human is left to be noticed
   // by accident halfway down the Details sheet.
   const stillIn = rows.filter((x) => x.status === "in").length;
@@ -289,8 +309,8 @@ function buildSummary(
   const missing = rows.filter((x) => x.status === "no_checkout").length;
 
   sectionHeading("Needs attention");
-  if (stillIn + estimated + missing === 0) {
-    dataRow(["Every visit has a recorded exit time", "", "", ""]);
+  if (stillIn + estimated + missing + awaitingApproval + noApprover === 0) {
+    dataRow(["Every visit has a recorded exit and approval", "", "", ""]);
   } else {
     tableHeader(["", "Visits", "", ""]);
     if (stillIn)
@@ -302,6 +322,20 @@ function buildSummary(
       );
     if (missing)
       dataRow(["No exit time recorded at all", missing, "", ""], true);
+    if (awaitingApproval)
+      dataRow(["Awaiting approval", awaitingApproval, "", ""], true);
+    if (noApprover)
+      dataRow(["No approver set", noApprover, "", ""], true);
+  }
+
+  // Kept last, and out of the Details sheet, because it is for internal
+  // reference (who logged what) rather than something the head needs to read
+  // to approve the day.
+  sectionHeading("Logged by");
+  tableHeader(["Logged by", "Visits", "People", ""]);
+  const byLogger = countBy(rows, (x) => x.created_by_name ?? "Unknown");
+  for (const [name, stats] of [...byLogger].sort((a, b) => b[1].visits - a[1].visits)) {
+    dataRow([name, stats.visits, stats.people, ""]);
   }
 
   return sheet;

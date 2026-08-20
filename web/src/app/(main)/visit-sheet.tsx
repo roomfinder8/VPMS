@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useState, useTransition } from "react";
 import { createVisit, updateVisit } from "@/app/actions/visits";
+import { approvalStatus, APPROVAL_STATUS_LABEL } from "@/lib/types";
 import type {
   Company,
   Host,
@@ -26,11 +27,21 @@ const inputClass =
   "h-12 w-full rounded-xl border border-line bg-raised px-3 text-base outline-none " +
   "transition focus:border-brand focus:ring-2 focus:ring-brand/25";
 
+function GroupLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <h3 className="text-xs font-semibold uppercase tracking-wide text-ink-faint">
+      {children}
+    </h3>
+  );
+}
+
 interface Props {
   initial: VisitFormValues;
   validationTypes: ValidationType[];
   hosts: Host[];
   companies: Company[];
+  vehicleBrands: string[];
+  approverNames: string[];
   onClose: () => void;
 }
 
@@ -39,6 +50,8 @@ export function VisitSheet({
   validationTypes,
   hosts,
   companies,
+  vehicleBrands,
+  approverNames,
   onClose,
 }: Props) {
   const [values, setValues] = useState<VisitFormValues>(initial);
@@ -48,10 +61,25 @@ export function VisitSheet({
 
   const companyListId = useId();
   const hostListId = useId();
+  const vehicleListId = useId();
+  const approverListId = useId();
   const isEdit = Boolean(initial.id);
   const selectedType = validationTypes.find(
     (t) => t.id === values.validationTypeId,
   );
+
+  // Collapsed for a brand-new entry (there is never an approval date to show
+  // yet); expanded automatically when editing, or the moment a validation
+  // error lands inside it - never hidden with the message still showing.
+  const approvalFieldError =
+    errorField === "approverName" || errorField === "approvedOn";
+  const [approvalOpenState, setApprovalOpenState] = useState(isEdit);
+  const approvalOpen = approvalOpenState || approvalFieldError;
+
+  const currentApprovalStatus = approvalStatus({
+    approver_name: values.approverName || null,
+    approved_on: values.approvedOn || null,
+  });
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -129,154 +157,201 @@ export function VisitSheet({
           </button>
         </div>
 
-        <form onSubmit={submit} className="flex flex-col gap-4 p-4">
-          {/* times */}
-          <div className="grid grid-cols-2 gap-3">
-            <label className="flex flex-col gap-1.5">
-              <span className="text-sm text-ink-soft">Time in</span>
-              <input
-                type="time"
-                value={values.timeIn}
-                onChange={(e) => set("timeIn", e.target.value)}
-                className={`${inputClass} tabular ${ring("timeIn")}`}
-                required
-              />
-            </label>
-            <label className="flex flex-col gap-1.5">
-              <span className="text-sm text-ink-soft">
-                Time out <span className="text-ink-faint">(optional)</span>
-              </span>
-              <input
-                type="time"
-                value={values.timeOut}
-                onChange={(e) => set("timeOut", e.target.value)}
-                className={`${inputClass} tabular ${ring("timeOut")}`}
-              />
-            </label>
-          </div>
+        <form onSubmit={submit} className="flex flex-col gap-5 p-4">
+          {/* ===== Visit ===== */}
+          <div className="flex flex-col gap-4">
+            <GroupLabel>Visit</GroupLabel>
 
-          {/* visitor */}
-          <div className="grid grid-cols-[1fr_5.5rem] gap-3">
-            <label className="flex flex-col gap-1.5">
-              <span className="text-sm text-ink-soft">Visitor name</span>
-              <input
-                value={values.visitorName}
-                onChange={(e) => set("visitorName", e.target.value)}
-                className={`${inputClass} ${ring("visitorName")}`}
-                autoFocus={!isEdit}
-                required
-              />
-            </label>
-            <label className="flex flex-col gap-1.5">
-              <span className="text-sm text-ink-soft">People</span>
-              <input
-                type="number"
-                inputMode="numeric"
-                min={1}
-                max={50}
-                value={values.visitorCount}
-                onChange={(e) => set("visitorCount", Number(e.target.value))}
-                className={`${inputClass} tabular ${ring("visitorCount")}`}
-              />
-            </label>
-          </div>
-
-          {/* company - datalist works on desktop and mobile with no JS of our own */}
-          <label className="flex flex-col gap-1.5">
-            <span className="text-sm text-ink-soft">Company</span>
-            <input
-              value={values.companyName}
-              onChange={(e) => set("companyName", e.target.value)}
-              list={companyListId}
-              className={`${inputClass} ${ring("companyName")}`}
-              required
-            />
-            <datalist id={companyListId}>
-              {companies.map((c) => (
-                <option key={c.id} value={c.name} />
-              ))}
-            </datalist>
-          </label>
-
-          {/* host */}
-          <label className="flex flex-col gap-1.5">
-            <span className="text-sm text-ink-soft">Host (person visited)</span>
-            <input
-              value={values.hostName}
-              onChange={(e) => set("hostName", e.target.value)}
-              list={hostListId}
-              className={`${inputClass} ${ring("hostName")}`}
-              required
-            />
-            <datalist id={hostListId}>
-              {hosts.map((h) => (
-                <option key={h.id} value={h.name}>
-                  {h.department ?? ""}
-                </option>
-              ))}
-            </datalist>
-            {hosts.length === 0 && (
-              <span className="text-xs text-ink-faint">
-                No hosts configured yet — just type a name; the list can be filled
-                in later from settings.
-              </span>
-            )}
-          </label>
-
-          {/* validation - large buttons, one tap, no dropdown */}
-          <div className="flex flex-col gap-1.5">
-            <span className="text-sm text-ink-soft">Validation stamped</span>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-              {validationTypes.map((t) => {
-                const active = values.validationTypeId === t.id;
-                return (
-                  <button
-                    key={t.id}
-                    type="button"
-                    onClick={() => set("validationTypeId", t.id)}
-                    aria-pressed={active}
-                    className={`flex h-16 flex-col items-center justify-center rounded-xl border-2
-                                text-sm font-medium transition active:scale-[0.98]
-                                ${
-                                  active
-                                    ? (PICKER[t.color] ?? PICKER.slate)
-                                    : "border-line bg-raised text-ink-soft hover:bg-surface"
-                                }`}
-                  >
-                    <span className="tabular text-xs opacity-60">
-                      {t.is_custom ? "own hours" : `key ${t.id}`}
-                    </span>
-                    <span>{t.label}</span>
-                  </button>
-                );
-              })}
+            <div className="grid grid-cols-2 gap-3">
+              <label className="flex flex-col gap-1.5">
+                <span className="text-sm text-ink-soft">Time in</span>
+                <input
+                  type="time"
+                  value={values.timeIn}
+                  onChange={(e) => set("timeIn", e.target.value)}
+                  className={`${inputClass} tabular ${ring("timeIn")}`}
+                  required
+                />
+              </label>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-sm text-ink-soft">
+                  Time out <span className="text-ink-faint">(optional)</span>
+                </span>
+                <input
+                  type="time"
+                  value={values.timeOut}
+                  onChange={(e) => set("timeOut", e.target.value)}
+                  className={`${inputClass} tabular ${ring("timeOut")}`}
+                />
+              </label>
             </div>
-            {errorField === "validationTypeId" && (
-              <span className="text-xs text-red-600">{error}</span>
-            )}
-          </div>
 
-          {/* Only shown for the custom slot, where hours are per visit rather
-              than fixed by the validation type. */}
-          {selectedType?.is_custom && (
+            <div className="grid grid-cols-[1fr_5.5rem] gap-3">
+              <label className="flex flex-col gap-1.5">
+                <span className="text-sm text-ink-soft">Visitor name</span>
+                <input
+                  value={values.visitorName}
+                  onChange={(e) => set("visitorName", e.target.value)}
+                  className={`${inputClass} ${ring("visitorName")}`}
+                  autoFocus={!isEdit}
+                  required
+                />
+              </label>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-sm text-ink-soft">People</span>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  max={50}
+                  value={values.visitorCount}
+                  onChange={(e) => set("visitorCount", Number(e.target.value))}
+                  className={`${inputClass} tabular ${ring("visitorCount")}`}
+                />
+              </label>
+            </div>
+
+            {/* company - datalist works on desktop and mobile with no JS of our own */}
             <label className="flex flex-col gap-1.5">
-              <span className="text-sm text-ink-soft">Free hours</span>
+              <span className="text-sm text-ink-soft">Company</span>
               <input
-                value={values.customFreeHours}
-                onChange={(e) => set("customFreeHours", e.target.value)}
-                inputMode="decimal"
-                placeholder="e.g. 6 or 1.5"
-                className={`${inputClass} tabular ${ring("customFreeHours")}`}
-                autoFocus
+                value={values.companyName}
+                onChange={(e) => set("companyName", e.target.value)}
+                list={companyListId}
+                className={`${inputClass} ${ring("companyName")}`}
+                required
               />
-              {errorField === "customFreeHours" && (
-                <span className="text-xs text-red-600">{error}</span>
+              <datalist id={companyListId}>
+                {companies.map((c) => (
+                  <option key={c.id} value={c.name} />
+                ))}
+              </datalist>
+            </label>
+
+            <label className="flex flex-col gap-1.5">
+              <span className="text-sm text-ink-soft">Host (person visited)</span>
+              <input
+                value={values.hostName}
+                onChange={(e) => set("hostName", e.target.value)}
+                list={hostListId}
+                className={`${inputClass} ${ring("hostName")}`}
+                required
+              />
+              <datalist id={hostListId}>
+                {hosts.map((h) => (
+                  <option key={h.id} value={h.name}>
+                    {h.department ?? ""}
+                  </option>
+                ))}
+              </datalist>
+              {hosts.length === 0 && (
+                <span className="text-xs text-ink-faint">
+                  No hosts configured yet — just type a name; the list can be
+                  filled in later from settings.
+                </span>
               )}
             </label>
-          )}
 
-          {/* optional */}
-          <div className="grid grid-cols-2 gap-3">
+            <label className="flex flex-col gap-1.5">
+              <span className="text-sm text-ink-soft">
+                Purpose / note <span className="text-ink-faint">(optional)</span>
+              </span>
+              <input
+                value={values.purpose}
+                onChange={(e) => set("purpose", e.target.value)}
+                placeholder="e.g. Project A meeting"
+                className={inputClass}
+              />
+            </label>
+          </div>
+
+          {/* ===== Parking ===== */}
+          <div className="flex flex-col gap-4 border-t border-line pt-5">
+            <GroupLabel>Parking</GroupLabel>
+
+            {/* validation - large buttons, one tap, no dropdown */}
+            <div className="flex flex-col gap-1.5">
+              <span className="text-sm text-ink-soft">Validation stamped</span>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                {validationTypes.map((t) => {
+                  const active = values.validationTypeId === t.id;
+                  return (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => set("validationTypeId", t.id)}
+                      aria-pressed={active}
+                      className={`flex h-16 flex-col items-center justify-center rounded-xl border-2
+                                  text-sm font-medium transition active:scale-[0.98]
+                                  ${
+                                    active
+                                      ? (PICKER[t.color] ?? PICKER.slate)
+                                      : "border-line bg-raised text-ink-soft hover:bg-surface"
+                                  }`}
+                    >
+                      <span className="tabular text-xs opacity-60">
+                        {t.is_custom ? "own hours" : `key ${t.id}`}
+                      </span>
+                      <span>{t.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              {errorField === "validationTypeId" && (
+                <span className="text-xs text-red-600">{error}</span>
+              )}
+            </div>
+
+            {/* Only shown for the custom slot, where hours are per visit rather
+                than fixed by the validation type. */}
+            {selectedType?.is_custom && (
+              <label className="flex flex-col gap-1.5">
+                <span className="text-sm text-ink-soft">Free hours</span>
+                <input
+                  value={values.customFreeHours}
+                  onChange={(e) => set("customFreeHours", e.target.value)}
+                  inputMode="decimal"
+                  placeholder="e.g. 6 or 1.5"
+                  className={`${inputClass} tabular ${ring("customFreeHours")}`}
+                  autoFocus
+                />
+                {errorField === "customFreeHours" && (
+                  <span className="text-xs text-red-600">{error}</span>
+                )}
+              </label>
+            )}
+
+            {/* vehicle + plate identify one physical car, so they sit together */}
+            <div className="grid grid-cols-2 gap-3">
+              <label className="flex flex-col gap-1.5">
+                <span className="text-sm text-ink-soft">
+                  Vehicle brand <span className="text-ink-faint">(optional)</span>
+                </span>
+                <input
+                  value={values.vehicleBrand}
+                  onChange={(e) => set("vehicleBrand", e.target.value)}
+                  list={vehicleListId}
+                  placeholder="e.g. Toyota"
+                  className={inputClass}
+                />
+                <datalist id={vehicleListId}>
+                  {vehicleBrands.map((b) => (
+                    <option key={b} value={b} />
+                  ))}
+                </datalist>
+              </label>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-sm text-ink-soft">
+                  Licence plate <span className="text-ink-faint">(optional)</span>
+                </span>
+                <input
+                  value={values.licensePlate}
+                  onChange={(e) => set("licensePlate", e.target.value)}
+                  className={inputClass}
+                />
+              </label>
+            </div>
+
             <label className="flex flex-col gap-1.5">
               <span className="text-sm text-ink-soft">
                 Parking card no. <span className="text-ink-faint">(optional)</span>
@@ -288,33 +363,77 @@ export function VisitSheet({
                 className={`${inputClass} tabular`}
               />
             </label>
-            <label className="flex flex-col gap-1.5">
-              <span className="text-sm text-ink-soft">
-                Licence plate <span className="text-ink-faint">(optional)</span>
-              </span>
-              <input
-                value={values.licensePlate}
-                onChange={(e) => set("licensePlate", e.target.value)}
-                className={inputClass}
-              />
-            </label>
           </div>
 
-          <label className="flex flex-col gap-1.5">
-            <span className="text-sm text-ink-soft">
-              Purpose / note <span className="text-ink-faint">(optional)</span>
-            </span>
-            <input
-              value={values.purpose}
-              onChange={(e) => set("purpose", e.target.value)}
-              placeholder="e.g. Project A meeting"
-              className={inputClass}
-            />
-          </label>
+          {/* ===== Approval ===== */}
+          <div className="flex flex-col gap-4 border-t border-line pt-5">
+            <button
+              type="button"
+              onClick={() => setApprovalOpenState((v) => !v)}
+              aria-expanded={approvalOpen}
+              className="flex w-full items-center justify-between text-left"
+            >
+              <GroupLabel>Approval</GroupLabel>
+              <span className="flex items-center gap-2 text-xs text-ink-faint">
+                {APPROVAL_STATUS_LABEL[currentApprovalStatus]}
+                <span
+                  className={`inline-block transition-transform ${approvalOpen ? "rotate-180" : ""}`}
+                >
+                  ▾
+                </span>
+              </span>
+            </button>
+
+            {approvalOpen && (
+              <>
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-sm text-ink-soft">
+                    Approver <span className="text-ink-faint">(optional)</span>
+                  </span>
+                  <input
+                    value={values.approverName}
+                    onChange={(e) => set("approverName", e.target.value)}
+                    list={approverListId}
+                    placeholder="Who is expected to approve this"
+                    className={`${inputClass} ${ring("approverName")}`}
+                  />
+                  <datalist id={approverListId}>
+                    {approverNames.map((n) => (
+                      <option key={n} value={n} />
+                    ))}
+                  </datalist>
+                  {errorField === "approverName" && (
+                    <span className="text-xs text-red-600">{error}</span>
+                  )}
+                </label>
+
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-sm text-ink-soft">
+                    Approved on{" "}
+                    <span className="text-ink-faint">
+                      (fill in once the head confirms)
+                    </span>
+                  </span>
+                  <input
+                    type="date"
+                    value={values.approvedOn}
+                    min={values.visitDate}
+                    onChange={(e) => set("approvedOn", e.target.value)}
+                    className={`${inputClass} tabular ${ring("approvedOn")}`}
+                  />
+                  {errorField === "approvedOn" && (
+                    <span className="text-xs text-red-600">{error}</span>
+                  )}
+                </label>
+              </>
+            )}
+          </div>
 
           {error &&
             errorField !== "validationTypeId" &&
-            errorField !== "customFreeHours" && (
+            errorField !== "customFreeHours" &&
+            errorField !== "approverName" &&
+            errorField !== "approvedOn" && (
             <p
               role="alert"
               className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700

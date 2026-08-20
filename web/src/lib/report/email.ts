@@ -72,6 +72,14 @@ function attentionItems(rows: ReportRow[]): Attention[] {
       label: "no exit time recorded at all",
       count: rows.filter((r) => r.status === "no_checkout").length,
     },
+    {
+      label: "awaiting approval",
+      count: rows.filter((r) => r.approval_status === "awaiting").length,
+    },
+    {
+      label: "with no approver set",
+      count: rows.filter((r) => r.approval_status === "no_approver").length,
+    },
   ].filter((i) => i.count > 0);
 }
 

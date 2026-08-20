@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { canEdit, getCurrentProfile } from "@/lib/auth";
-import { toInstant } from "@/lib/tz";
+import { toInstant, todayKey } from "@/lib/tz";
 import type { ActionResult, VisitFormValues } from "@/lib/types";
 
 type Supabase = Awaited<ReturnType<typeof createClient>>;
@@ -88,6 +88,9 @@ interface NormalizedVisit {
   custom_free_hours: number | null;
   parking_card_no: string | null;
   license_plate: string | null;
+  vehicle_brand: string | null;
+  approver_name: string | null;
+  approved_on: string | null;
   remark: string | null;
 }
 
@@ -117,6 +120,10 @@ function normalize(
   const hostName = values.hostName?.trim() ?? "";
 
   if (!DATE_RE.test(values.visitDate)) return fail("Invalid date", "visitDate");
+  // A future date has no real check-in to log yet - almost always a mistyped
+  // year rather than an intentional entry, so it is rejected rather than saved.
+  if (values.visitDate > todayKey())
+    return fail("The date cannot be in the future", "visitDate");
   if (!TIME_RE.test(values.timeIn))
     return fail("Invalid time in (e.g. 09:15)", "timeIn");
   if (!visitorName) return fail("Enter the visitor's name", "visitorName");
@@ -153,6 +160,22 @@ function normalize(
       return fail("Time out cannot be before time in", "timeOut");
   }
 
+  const approverName = values.approverName?.trim() || null;
+
+  let approvedOn: string | null = null;
+  const approvedRaw = values.approvedOn?.trim() ?? "";
+  if (approvedRaw) {
+    if (!DATE_RE.test(approvedRaw))
+      return fail("Invalid approval date", "approvedOn");
+    // Mirrors visits_approved_after_visit in the database.
+    if (approvedRaw < values.visitDate)
+      return fail("The approval date cannot be before the visit date", "approvedOn");
+    // Mirrors visits_approver_required_when_approved in the database.
+    if (!approverName)
+      return fail("Set who approved it before adding a date", "approverName");
+    approvedOn = approvedRaw;
+  }
+
   return {
     check_in_at: checkIn,
     check_out_at: checkOut,
@@ -165,6 +188,9 @@ function normalize(
     custom_free_hours: customHours,
     parking_card_no: values.parkingCardNo?.trim() || null,
     license_plate: values.licensePlate?.trim() || null,
+    vehicle_brand: values.vehicleBrand?.trim() || null,
+    approver_name: approverName,
+    approved_on: approvedOn,
     remark: values.remark?.trim() || null,
   };
 }
@@ -249,12 +275,33 @@ export async function updateVisit(
   return { ok: true };
 }
 
-/** The "Check out" button - uses the real current time; the client never supplies it */
+/**
+ * The "Check out now" button - stamps the real current time; the client never
+ * supplies it. Restricted to today's own visits: stamping "now" onto a
+ * backdated row would silently record an exit time on the wrong day, hours or
+ * days away from when the visitor actually left. Editing a past visit still
+ * works normally - it just has to go through the form, where the time is
+ * typed rather than assumed.
+ */
 export async function checkOutVisit(id: string): Promise<ActionResult> {
   const profile = await requireEditor();
   if (!profile) return fail("You do not have permission to edit records");
 
   const supabase = await createClient();
+
+  const { data: visit } = await supabase
+    .from("visits")
+    .select("visit_date")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (!visit) return fail("Could not find that visit");
+  if (visit.visit_date !== todayKey()) {
+    return fail(
+      "Only today's visits can be checked out with the current time — edit the record to set a specific time instead.",
+    );
+  }
+
   const { error } = await supabase
     .from("visits")
     .update({ check_out_at: new Date().toISOString(), auto_closed: false })

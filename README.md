@@ -37,7 +37,15 @@ vpms/
 │     ├─ 0002_seed_and_views.sql                   seed data + reporting view
 │     ├─ 0003_username_lowercase_and_company_counter.sql
 │     ├─ 0004_harden_functions_and_extensions.sql  security-advisor fixes
-│     └─ 0005_english_labels_and_comments.sql
+│     ├─ 0005_english_labels_and_comments.sql
+│     ├─ 0006_simplify_roles_admin_user.sql
+│     ├─ 0007_fix_duration_rounding.sql
+│     ├─ 0008_custom_validation_hours.sql
+│     ├─ 0009_close_open_visits_and_status.sql
+│     ├─ 0010_close_open_visits_rpc_wrapper.sql
+│     ├─ 0011_schedule_daily_report.sql
+│     ├─ 0012_drop_final_report_recipients.sql
+│     └─ 0013_vehicle_brand_and_approval.sql
 └─ web/                     Next.js 16 + React 19 + Tailwind 4
    └─ .env.local.example
 ```
@@ -99,11 +107,49 @@ can drop whenever the OS reclaims the browser.
 
 - `visits.company_name` / `host_name` keep a snapshot next to the foreign key, so renaming
   a company later does not rewrite reports that were already sent
-- `parking_card_no` and `license_plate` **have fields but are not required** — they are
-  the only way to trace a charge back if the building's invoice ever needs reconciling
+- `parking_card_no`, `license_plate` and `vehicle_brand` **have fields but are not
+  required** — `parking_card_no` / `license_plate` are the only way to trace a charge back
+  if the building's invoice ever needs reconciling; `vehicle_brand` + `license_plate`
+  together are what actually identify one physical car in the lot
 - `visitor_count` — one car, one stamp, several people
 - `auto_closed` — visits nobody checked out get closed by the end-of-day job and
   **flagged**, rather than quietly disappearing
+
+### Vehicle brand
+
+Free text (`visits.vehicle_brand` — Toyota, Ford, Benz...), not a lookup table, because the
+set is open-ended and there is no fixed list to validate against. The datalist suggests a
+starting set of common brands (`lib/vehicle-brands.ts`) plus whatever has actually been
+typed before (`distinctSorted()` over the historical values in `page.tsx`) — any text can
+still be typed, the list only speeds up the common case.
+
+### Approval
+
+Each visit carries its own `approver_name` and `approved_on` (`visits.approved_on`), not a
+per-day table — the head sometimes approves visits one at a time rather than the whole day
+together. Status is derived, never stored:
+
+| `approver_name` | `approved_on` | status |
+|---|---|---|
+| empty | empty | `no_approver` |
+| set | empty | `awaiting` |
+| set | set | `approved` |
+
+`approver_name` is free text with the same autocomplete pattern as `vehicle_brand` — there
+is no roster, because who is expected to approve can change at short notice. Two database
+constraints keep it consistent: `approved_on` can never be before `visit_date`
+(`visits_approved_after_visit`), and it can never be set without an approver on record
+(`visits_approver_required_when_approved`). Both are mirrored in the app with a friendly
+message before the row ever reaches Postgres.
+
+Because the head usually approves a whole day's visits from one email reply, the Today
+board supports **selecting several rows and applying an approver or an approval date to
+all of them at once** (`app/actions/approvals.ts`) — "Select: all / awaiting approval"
+above the list, then "Set approver…" / "Set approved date…" once something is selected.
+Setting the approver never touches `approved_on` on rows that already had one, so swapping
+in a stand-in head does not silently unapprove anything. A new entry also prefills
+`approver_name` from whichever approver was most recently used that day, since most days
+have exactly one.
 
 ### Validation types
 
@@ -124,6 +170,31 @@ A meeting overruns, the visitor comes back to the desk and gets re-stamped for l
 Press **Edit** on the row and pick the new validation — the record always reflects the
 final validation the visitor left with, which is what the cost is based on. The app keeps
 no history of the earlier value; add one if it ever needs auditing.
+
+### Backdated entries
+
+The Today board is really a **day board** — `/?date=YYYY-MM-DD` (`app/(main)/page.tsx`)
+picks which day is on screen, defaulting to and clamping at today (a future date, whether
+typed into the URL or requested past the cron's own `todayKey()`, falls back rather than
+rendering an empty "future" page). `date-nav.tsx` provides the prev/next arrows, a native
+date picker (`max` = today), and a "Today" shortcut, pushing `/?date=...` or the bare `/`
+for the common case.
+
+Two things change on a day that is not today:
+
+- the **Add visitor** form leaves Time in blank instead of prefilling the current clock
+  time — a past day has no "now" to default to, and silently prefilling today's clock time
+  onto a backdated row would be a wrong answer nobody asked for
+- **Check out now** does not appear on open visits — that button stamps the real current
+  time, which would record an exit on the wrong day. A muted "Edit to add a check-out time"
+  takes its place; typing the exact time through Edit still works normally. The same rule
+  is enforced again server-side in `checkOutVisit` (`app/actions/visits.ts`), which rejects
+  the call outright if the visit's `visit_date` is not today — the UI omission is not the
+  only thing standing in the way.
+
+**Send now** on the report card sends whichever date is on screen, not necessarily today —
+useful for resending a day after a correction, or producing a report for a day the schedule
+never got to.
 
 ---
 
@@ -175,11 +246,16 @@ maths runs through `lib/tz.ts`, anchored at midday Thailand time so adding days 
 tip a value across a date boundary.
 
 - sheet **`Details`** — no. / date / time in / time out / duration / visitor / people /
-  company / host / validation / free hrs / card no. / plate / purpose / status / logged by,
-  with a frozen header and an autofilter
+  company / host / validation / free hrs / card no. / plate / vehicle / purpose / status /
+  approver / approved, with a frozen header and an autofilter. A row still awaiting
+  approval is coloured the same way an unresolved status is, because this sheet doubles as
+  the approval request the head reads.
 - sheet **`Summary`** — totals, by day (ranges only), by validation, by host, by company,
-  and a **Needs attention** block counting anything still in, estimated or missing an exit.
-  This is the sheet the manager actually reads.
+  an **Approval** block (approved / awaiting / no approver counts), a **Needs attention**
+  block counting anything still in, estimated, missing an exit, awaiting approval or with
+  no approver set, and a **Logged by** breakdown at the end. This is the sheet the manager
+  actually reads; `Logged by` sits here rather than in Details because it is for internal
+  reference, not something the head needs per row to approve the day.
 
 Times are written as `HH:mm` **text**, already converted to Thailand time by the view.
 Writing them as real Excel times would make the file render differently depending on the
@@ -247,7 +323,6 @@ phone has to work properly.
 - **Tablet / desktop** — wider rows, the form is a centred modal
 - Validation is picked with **three large buttons**, not a dropdown — one tap on any device
 - Numeric fields use `inputMode="numeric"` so phones show the number pad
-- The manager can open the same app on a phone in `viewer` mode
 
 The UI is English, but visitor and company names are frequently typed in Thai, so the font
 (Noto Sans Thai) deliberately covers both scripts.
@@ -298,10 +373,22 @@ Done:
 - the schedule — `pg_cron` every 15 min into `/api/cron/daily-report`, which closes open
   visits and then sends if the report is due
 - Settings page (admin) — recipient, send time, send days, and the two toggles
+- date navigation (`/?date=...`) — the board can be walked back to any past day to log a
+  backdated visit, with Check out now and the empty-Time-in prefill both gated to today
+- per-visit approval (`approver_name`, `approved_on`) with multi-select bulk actions to set
+  an approver or an approval date across several rows at once, and vehicle brand as a
+  free-text field alongside the licence plate
+
+Verified end to end against the live database and the running app: creating a visit with a
+vehicle brand and an approver, the "awaiting → approved" bulk flow (including the server
+rejecting a bulk approval date for a row with no approver set), the approver-swap bulk
+action leaving an existing `approved_on` untouched, backdated entry with no quick
+check-out button, and the Excel/email output for all of it.
 
 Not built yet:
 
-- History / search across past days
+- History / search across past days (date navigation covers one day at a time; there is no
+  cross-day search or filter view yet)
 - Settings for validation types and hosts (still SQL-only)
 - user management (accounts are created in the Supabase dashboard)
 

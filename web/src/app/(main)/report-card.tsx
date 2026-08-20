@@ -7,7 +7,9 @@ import { timeHHmm } from "@/lib/tz";
 import type { ReportRun } from "@/lib/types";
 
 interface Props {
-  today: string;
+  /** the day this report covers - not necessarily today */
+  date: string;
+  isToday: boolean;
   runs: ReportRun[];
   recipients: string[];
   sendTime: string;
@@ -17,7 +19,8 @@ interface Props {
 }
 
 export function ReportCard({
-  today,
+  date,
+  isToday,
   runs,
   recipients,
   sendTime,
@@ -30,14 +33,14 @@ export function ReportCard({
   const [, startTransition] = useTransition();
 
   const lastRun = runs[0] ?? null;
-  const sentToday = runs.some((r) => r.status === "sent");
+  const alreadySent = runs.some((r) => r.status === "sent");
   const configured = recipients.length > 0;
 
   function send() {
     setBusy(true);
     setMessage(null);
     startTransition(async () => {
-      const result = await sendReportNow(today);
+      const result = await sendReportNow(date);
       setBusy(false);
       setMessage(result.ok ? null : (result.error ?? "Could not send"));
     });
@@ -47,11 +50,15 @@ export function ReportCard({
     <section className="rounded-xl border border-line bg-raised p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="font-medium">Daily report</h2>
+          <h2 className="font-medium">
+            {isToday ? "Daily report" : "Report for this date"}
+          </h2>
           <p className="text-sm text-ink-faint">
-            {autoSendEnabled
-              ? `Emailed to ${configured ? recipients.join(", ") : "nobody yet"} at ${sendTime.slice(0, 5)}, with the Excel file attached.`
-              : "Automatic sending is switched off — send it by hand below."}
+            {isToday
+              ? autoSendEnabled
+                ? `Emailed to ${configured ? recipients.join(", ") : "nobody yet"} at ${sendTime.slice(0, 5)}, with the Excel file attached.`
+                : "Automatic sending is switched off — send it by hand below."
+              : "The schedule only sends today's report — use the button below to send this date by hand."}
           </p>
         </div>
 
@@ -67,7 +74,9 @@ export function ReportCard({
 
       <p className="mt-3 text-sm">
         {!lastRun ? (
-          <span className="text-ink-faint">Not sent yet today.</span>
+          <span className="text-ink-faint">
+            {isToday ? "Not sent yet today." : "Not sent for this date yet."}
+          </span>
         ) : lastRun.status === "sent" ? (
           <span className="text-ink-soft">
             Sent {timeHHmm(lastRun.created_at)} to {lastRun.recipients.join(", ")}
@@ -120,7 +129,7 @@ export function ReportCard({
           >
             {busy
               ? "Sending…"
-              : sentToday
+              : alreadySent
                 ? "Send again now"
                 : "Send now"}
           </button>
