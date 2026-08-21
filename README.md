@@ -319,12 +319,20 @@ and `select private.unschedule_daily_report();` to stop it. Default schedule is
 The app is split across two routes under `(main)/`:
 
 - **`/` — the dashboard** (`page.tsx` + `calendar-view.tsx`) — a week or month calendar,
-  `?view=week|month&date=YYYY-MM-DD`. Each day cell/card shows a visit count and, in week
-  view, a short preview of who visited; a day with anything not fully approved gets an
-  amber tint (month) or a dot (week) so it stands out while paging through past weeks.
-  Tapping a date goes to that day's detail. Entirely server-rendered `<Link>` navigation —
-  no client JS is needed for paging or switching views, which keeps it as simple as the
-  rest of the app.
+  `?view=week|month&date=YYYY-MM-DD`. Each day cell/card shows only a visit count (plus, in
+  week view, a short preview of who visited) — deliberately not decorated with an
+  approval-status colour per day. With volume this low, colouring individual squares reads
+  as noise once more than one or two need attention; instead every date in the visible range
+  with anything not fully approved is collected into one **Needs approval** banner above the
+  grid, each date a chip linking straight to its `/day`. Tapping a plain date on the grid
+  goes to that day's detail the same way. Entirely server-rendered `<Link>` navigation — no
+  client JS is needed for paging, switching views, or the banner, which keeps it as simple
+  as the rest of the app.
+- Day cells are a fixed `h-11`/`h-12`, not `aspect-square` — squares that scale with a
+  seven-column row get wide on anything past a phone; a fixed height keeps them compact
+  regardless of viewport. The Week/Month switch sits on its own row under the date heading
+  rather than sharing a `flex-wrap` row with it, which used to make it wrap unpredictably
+  and look like it was floating loose from the rest of the header on narrower screens.
 - **`/day?date=YYYY-MM-DD` — the day board** (`day/page.tsx`, unchanged from when this was
   the app's only view) — add / edit / check out / bulk-approve, the report card, the export
   panel. `DateNav` here still steps a single day at a time and links back to the dashboard
@@ -451,7 +459,8 @@ Done:
   the form (no collapse/expand to fight with), and the autocomplete list is seeded from
   whatever has actually been typed before
 - the calendar dashboard (`/`, week or month, `calendar-view.tsx`) — tap a date to open its
-  `/day` detail; days with anything unapproved are flagged directly on the grid
+  `/day` detail; a single **Needs approval** banner above the grid lists every unapproved
+  date as a chip rather than colouring individual cells
 - dark/light toggle in the header, persisted and flash-free on reload (`theme-toggle.tsx`,
   `lib/theme-script.ts`)
 - the layout/page data split (`board-data-context.tsx`) so paging between days only re-runs
@@ -461,8 +470,10 @@ Verified end to end against the live database and the running app: creating a vi
 vehicle brand and an approver, the "awaiting → approved" bulk flow (including the server
 rejecting a bulk approval date for a row with no approver set), the approver-swap bulk
 action leaving an existing `approved_on` untouched, backdated entry with no quick
-check-out button, the Excel/email output for all of it, the calendar's counts and
-needs-attention flags against real inserted rows, and the theme toggle surviving a reload.
+check-out button, the Excel/email output for all of it, the calendar's counts and its
+consolidated Needs-approval banner against real inserted rows, the theme toggle surviving a
+reload, and the day-cell height fix (48px, down from a viewport-scaled `aspect-square` that
+had grown past 130px tall).
 
 Not built yet:
 

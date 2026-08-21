@@ -17,6 +17,8 @@ interface Props {
   today: string;
   weeks: string[][];
   days: Map<string, DaySummary>;
+  /** dates in the visible range with anything not fully approved, oldest first */
+  attentionDates: string[];
   totalVisits: number;
   prevHref: string;
   nextHref: string;
@@ -26,12 +28,45 @@ const navLinkClass =
   "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-line " +
   "text-ink-soft transition hover:bg-surface active:scale-[0.98]";
 
+/** 'Tue 4' - short enough for a chip, unambiguous within one week/month view */
+function chipLabel(date: string): string {
+  return `${weekdayName(`${date}T12:00:00+07:00`).slice(0, 3)} ${Number(date.slice(8, 10))}`;
+}
+
+function AttentionBanner({ dates }: { dates: string[] }) {
+  if (dates.length === 0) return null;
+
+  return (
+    <div
+      className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2.5
+                 dark:border-amber-900 dark:bg-amber-950/40"
+    >
+      <p className="text-sm font-medium text-amber-900 dark:text-amber-200">
+        Needs approval ({dates.length} day{dates.length === 1 ? "" : "s"})
+      </p>
+      <div className="mt-1.5 flex flex-wrap gap-1.5">
+        {dates.map((date) => (
+          <Link
+            key={date}
+            href={`/day?date=${date}`}
+            className="tabular rounded-md bg-amber-100 px-2 py-1 text-xs font-medium text-amber-900
+                       transition hover:bg-amber-200 dark:bg-amber-900/60 dark:text-amber-100
+                       dark:hover:bg-amber-900"
+          >
+            {chipLabel(date)}
+          </Link>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function ViewToggle({ view, anchor }: { view: "week" | "month"; anchor: string }) {
   const tab = (label: string, target: "week" | "month", href: string) => (
     <Link
       href={href}
       aria-current={view === target ? "page" : undefined}
-      className={`h-9 rounded-lg px-3 text-sm font-medium transition
+      className={`h-8 rounded-md px-3 text-sm font-medium transition
                   ${
                     view === target
                       ? "bg-brand text-white"
@@ -43,7 +78,7 @@ function ViewToggle({ view, anchor }: { view: "week" | "month"; anchor: string }
   );
 
   return (
-    <div className="flex items-center gap-1 rounded-lg border border-line p-1">
+    <div className="inline-flex items-center gap-1 rounded-lg border border-line p-1">
       {tab("Week", "week", `/?view=week&date=${anchor}`)}
       {tab("Month", "month", `/?view=month&date=${anchor}`)}
     </div>
@@ -68,23 +103,17 @@ function DayCell({
   return (
     <Link
       href={`/day?date=${date}`}
-      className={`flex aspect-square flex-col items-center justify-center gap-1 rounded-lg
-                  border p-1 text-center transition hover:border-brand hover:bg-brand-soft/40
+      className={`flex h-11 flex-col items-center justify-center gap-0.5 rounded-lg
+                  border text-center transition hover:border-brand hover:bg-brand-soft/40
+                  sm:h-12
                   ${isToday ? "border-brand" : "border-line"}
                   ${inCurrentMonth ? "" : "opacity-40"}`}
     >
-      <span className={`tabular text-sm ${isToday ? "font-semibold text-brand" : ""}`}>
+      <span className={`tabular text-xs ${isToday ? "font-semibold text-brand" : ""}`}>
         {dayNum}
       </span>
       {count > 0 && (
-        <span
-          className={`tabular flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[11px] font-medium
-                      ${
-                        summary?.needsAttention
-                          ? "bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200"
-                          : "bg-brand-soft text-brand"
-                      }`}
-        >
+        <span className="tabular rounded-full bg-brand-soft px-1.5 text-[10px] font-medium text-brand">
           {count}
         </span>
       )}
@@ -104,14 +133,14 @@ function MonthGrid({
   monthNum: string;
 }) {
   return (
-    <div className="flex flex-col gap-1.5">
-      <div className="grid grid-cols-7 gap-1.5 text-center text-xs font-medium text-ink-faint">
+    <div className="flex flex-col gap-1">
+      <div className="grid grid-cols-7 gap-1 text-center text-[11px] font-medium text-ink-faint">
         {WEEKDAY_LABELS.map((label) => (
           <div key={label}>{label}</div>
         ))}
       </div>
       {weeks.map((week) => (
-        <div key={week[0]} className="grid grid-cols-7 gap-1.5">
+        <div key={week[0]} className="grid grid-cols-7 gap-1">
           {week.map((date) => (
             <DayCell
               key={date}
@@ -168,20 +197,12 @@ function WeekList({
                     </p>
                     <p className="text-xs text-ink-faint">
                       {summary.count} visit{summary.count === 1 ? "" : "s"}
-                      {summary.needsAttention && " · needs approval"}
                     </p>
                   </>
                 ) : (
                   <p className="text-sm text-ink-faint">No visitors</p>
                 )}
               </div>
-
-              {summary?.needsAttention && (
-                <span
-                  aria-hidden="true"
-                  className="h-2 w-2 shrink-0 rounded-full bg-amber-500"
-                />
-              )}
             </Link>
           </li>
         );
@@ -196,6 +217,7 @@ export function CalendarView({
   today,
   weeks,
   days,
+  attentionDates,
   totalVisits,
   prevHref,
   nextHref,
@@ -207,38 +229,39 @@ export function CalendarView({
     view === "month" ? anchor.slice(0, 7) === today.slice(0, 7) : weeks[0].includes(today);
 
   return (
-    <div className="flex flex-col gap-5">
-      <section>
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-1.5">
-            <Link href={prevHref} aria-label="Previous" className={navLinkClass}>
-              ‹
+    <div className="flex flex-col gap-4">
+      <section className="flex flex-col gap-3">
+        <div className="flex items-center gap-1.5">
+          <Link href={prevHref} aria-label="Previous" className={navLinkClass}>
+            ‹
+          </Link>
+          <Link href={nextHref} aria-label="Next" className={navLinkClass}>
+            ›
+          </Link>
+          <h1 className="ml-1 flex-1 text-xl font-semibold tracking-tight">{label}</h1>
+          {!isCurrentPeriod && (
+            <Link
+              href={todayHref}
+              className="h-9 shrink-0 rounded-lg bg-brand-soft px-3 text-sm font-medium
+                         leading-9 text-brand transition hover:brightness-95"
+            >
+              Today
             </Link>
-            <Link href={nextHref} aria-label="Next" className={navLinkClass}>
-              ›
-            </Link>
-            <h1 className="ml-1 text-xl font-semibold tracking-tight">{label}</h1>
-            {!isCurrentPeriod && (
-              <Link
-                href={todayHref}
-                className="h-9 shrink-0 rounded-lg bg-brand-soft px-3 text-sm font-medium
-                           leading-9 text-brand transition hover:brightness-95"
-              >
-                Today
-              </Link>
-            )}
-          </div>
-
-          <ViewToggle view={view} anchor={anchor} />
+          )}
         </div>
 
-        <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
-          <span className="rounded-lg bg-raised px-2.5 py-1 border border-line">
-            <b className="tabular">{totalVisits}</b> visit{totalVisits === 1 ? "" : "s"} this{" "}
+        {/* Its own row, always in the same place - inline with the arrows it
+            ended up wrapping unpredictably on narrower screens. */}
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-sm text-ink-faint">
+            <b className="tabular text-ink">{totalVisits}</b> visit{totalVisits === 1 ? "" : "s"} this{" "}
             {view}
           </span>
+          <ViewToggle view={view} anchor={anchor} />
         </div>
       </section>
+
+      <AttentionBanner dates={attentionDates} />
 
       {view === "month" ? (
         <MonthGrid weeks={weeks} today={today} days={days} monthNum={anchor.slice(5, 7)} />

@@ -70,6 +70,14 @@ export default async function DashboardPage({
   // adjacent month.
   const pagingAnchor = view === "month" ? startOfMonth(anchor) : startOfWeek(anchor);
 
+  // Collected into one banner rather than decorating every cell - with only a
+  // handful of visits a day, a colour on each affected square read as noise;
+  // one line naming the dates does the same job without cluttering the grid.
+  const attentionDates = [...byDate.values()]
+    .filter((d) => d.needsAttention)
+    .map((d) => d.date)
+    .sort();
+
   return (
     <CalendarView
       view={view}
@@ -77,6 +85,7 @@ export default async function DashboardPage({
       today={today}
       weeks={weeks}
       days={byDate}
+      attentionDates={attentionDates}
       totalVisits={data?.length ?? 0}
       prevHref={
         view === "month"
