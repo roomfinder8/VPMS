@@ -105,15 +105,15 @@ function DayCell({
       href={`/day?date=${date}`}
       className={`flex h-11 flex-col items-center justify-center gap-0.5 rounded-lg
                   border text-center transition hover:border-brand hover:bg-brand-soft/40
-                  sm:h-12
+                  sm:h-14
                   ${isToday ? "border-brand" : "border-line"}
                   ${inCurrentMonth ? "" : "opacity-40"}`}
     >
-      <span className={`tabular text-xs ${isToday ? "font-semibold text-brand" : ""}`}>
+      <span className={`tabular text-xs sm:text-sm ${isToday ? "font-semibold text-brand" : ""}`}>
         {dayNum}
       </span>
       {count > 0 && (
-        <span className="tabular rounded-full bg-brand-soft px-1.5 text-[10px] font-medium text-brand">
+        <span className="tabular rounded-full bg-brand-soft px-1.5 text-[10px] font-medium text-brand sm:text-xs">
           {count}
         </span>
       )}
