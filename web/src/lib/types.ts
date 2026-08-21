@@ -171,13 +171,19 @@ export interface VisitFormValues {
   remark: string;
 }
 
+/** daily = one email per scheduled weekday; monthly = one email covering the previous calendar month */
+export type ReportFrequency = "daily" | "monthly";
+
 export interface ReportSettings {
   /** Who receives the daily report - the reviewer, not the manager */
   draft_recipients: string[];
   /** 'HH:MM:SS' in Thailand time */
   send_time: string;
-  /** ISO day of week, 1 = Monday .. 7 = Sunday */
+  frequency: ReportFrequency;
+  /** ISO day of week, 1 = Monday .. 7 = Sunday - used when frequency = 'daily' */
   send_days: number[];
+  /** 1-28 - used when frequency = 'monthly' */
+  send_day_of_month: number;
   report_timezone: string;
   auto_send_enabled: boolean;
   auto_close_open_visits: boolean;

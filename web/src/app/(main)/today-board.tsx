@@ -209,6 +209,12 @@ export function TodayBoard({ date, today, visits, runs }: Props) {
     );
   }
 
+  function selectNotCheckedOut() {
+    setSelected(
+      new Set(visits.filter((v) => visitStatus(v) === "in").map((v) => v.id)),
+    );
+  }
+
   function openBulk(mode: "approver" | "approvedOn") {
     setBulkMode(mode);
     setBulkError(null);
@@ -479,6 +485,13 @@ export function TodayBoard({ date, today, visits, runs }: Props) {
             className="text-brand underline underline-offset-2"
           >
             awaiting approval
+          </button>
+          <button
+            type="button"
+            onClick={selectNotCheckedOut}
+            className="text-brand underline underline-offset-2"
+          >
+            not checked out
           </button>
           {selected.size > 0 && (
             <button

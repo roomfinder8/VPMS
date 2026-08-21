@@ -74,19 +74,19 @@ export function VisitSheet({
     approved_on: values.approvedOn || null,
   });
 
+  // Deliberately no Escape-to-close and no click-outside-to-close: a stray
+  // tap on the backdrop or an Escape hit while typing used to discard
+  // whatever had been filled in with no confirmation. Cancel and the header
+  // Close button are the only ways out now - both are a specific, deliberate
+  // click, never an accidental one.
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", onKey);
     // Stop the page behind the sheet from scrolling with the finger on mobile.
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
-      document.removeEventListener("keydown", onKey);
       document.body.style.overflow = prev;
     };
-  }, [onClose]);
+  }, []);
 
   function set<K extends keyof VisitFormValues>(
     key: K,
@@ -123,12 +123,7 @@ export function VisitSheet({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-40 flex items-end justify-center bg-black/40 sm:items-center"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
+    <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/40 sm:items-center">
       <div
         role="dialog"
         aria-modal="true"

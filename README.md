@@ -45,7 +45,8 @@ vpms/
 │     ├─ 0010_close_open_visits_rpc_wrapper.sql
 │     ├─ 0011_schedule_daily_report.sql
 │     ├─ 0012_drop_final_report_recipients.sql
-│     └─ 0013_vehicle_brand_and_approval.sql
+│     ├─ 0013_vehicle_brand_and_approval.sql
+│     └─ 0014_monthly_report_frequency.sql
 └─ web/                     Next.js 16 + React 19 + Tailwind 4
    └─ .env.local.example
 ```
@@ -205,33 +206,57 @@ never got to.
 
 ```
 every 15 min   pg_cron ──► /api/cron/daily-report
-                           ├─ is it a send day, and has the send time passed?
-                           ├─ has today's report already gone out?   → skip
-                           ├─ close visits nobody checked out (flagged)
-                           ├─ build the Excel file from visits_report
+                           ├─ close yesterday's forgotten check-outs (always, any frequency)
+                           ├─ daily:   is today a send day, and has the send time passed?
+                           │  monthly: is today the scheduled day-of-month, and has the time passed?
+                           ├─ has this period's report already gone out?   → skip
+                           ├─ close any remaining open visits across the report's own range
+                           ├─ build the Excel file from visits_report (one day, or the range)
                            └─ email it to the reviewer, with the file attached
                                      │
                            she checks it, fixes anything in the app,
                            then writes to the manager from her own mailbox
 ```
 
-**The system emails exactly one person: the reviewer.** It never writes to the manager —
-a report landing in the manager's inbox straight from a personal Gmail account was never
-going to look right, and the numbers deserve a human glance first either way. There is a
-**Send now** button for sending it earlier, or again after a correction.
+**The system emails exactly one person, or a small list of people the reviewer chooses -
+never the manager directly.** A report landing in the manager's inbox straight from a
+personal Gmail account was never going to look right, and the numbers deserve a human
+glance first either way. There is a **Send now** button for sending it earlier, or again
+after a correction - it always covers a single day (whichever `/day` you're on), regardless
+of the schedule's frequency.
 
 Every attempt is written to `report_runs` (when, who triggered it, to whom, sent / failed /
-skipped and why), so "did today's report go out?" always has an answer.
+skipped and why), keyed by `report_date` = the first day of whatever period it covers, so
+"did this period's report go out?" always has an answer.
+
+### Daily or monthly
+
+`report_settings.frequency` is `'daily'` or `'monthly'`, set from Settings:
+
+- **daily** — unchanged: `send_days` (which weekdays) + `send_time`, one email covering that
+  single day
+- **monthly** — `send_day_of_month` (1–28, capped so it always exists) + `send_time`, one
+  email covering the **previous full calendar month** (`from` = the 1st of last month, `to`
+  = the day before this month started). The Excel/email code already accepted arbitrary
+  `from`/`to` ranges from when the Export button needed it - switching the schedule to
+  produce a month-long range instead of a single day needed no changes there at all.
+
+Switching frequency doesn't touch `auto_close_open_visits`: whether or not a report is due
+today, the cron closes **yesterday's** forgotten check-outs on every tick it runs
+(see below) - so the board still looks clean day to day even when a whole month goes by
+between emails.
 
 ### Why the schedule is every 15 minutes
 
-The endpoint decides for itself whether the report is due, rather than trusting the clock
-that woke it. That buys three things: the send time lives in `report_settings` and can be
+The endpoint decides for itself whether a report is due, rather than trusting the clock
+that woke it. That buys three things: the schedule lives in `report_settings` and can be
 changed from the Settings page without touching the cron entry; a run missed while the app
 was down still goes out on the next tick; and calling the endpoint twice cannot send twice,
-because a successful run for that date makes the next call skip.
+because a successful scheduled run for that period makes the next call skip.
 
-`?force=1` bypasses the day, time and already-sent checks for testing.
+`?force=1` bypasses the day, time and already-sent checks for testing - verified against the
+monthly branch specifically: forcing it with today set to August correctly computed
+`from=2026-07-01, to=2026-07-31` and logged the attempt under that `report_date`.
 
 ### The Excel file
 
@@ -268,7 +293,7 @@ status, so the layout can be checked without signing in or seeding data. Set
 
 ### Visits nobody checked out
 
-At the end of the day `private.close_open_visits(date)` closes whatever is still open:
+`private.close_open_visits(date)` closes whatever is still open on the given date:
 
 - the exit time becomes **check-in + the free hours that were stamped** — a rule that can
   be explained, rather than an arbitrary cutoff
@@ -279,6 +304,12 @@ At the end of the day `private.close_open_visits(date)` closes whatever is still
 
 Either way the secretary can still Edit the row and enter the real time afterwards.
 Four statuses come out of this: `in`, `out`, `estimated`, `no_checkout`.
+
+It's called from the cron route in two places: **yesterday**, unconditionally, on every
+tick regardless of whether a report is due (so the board stays tidy day to day under a
+monthly schedule, not just once a month) - and again across the **report's own range** right
+before sending, as a final sweep that's usually a no-op by then since yesterday's pass
+already caught it.
 
 ### Sending via Gmail
 
@@ -291,7 +322,10 @@ The sender authenticates with a **16-character App Password**, not the normal Gm
 3. Put it in `GMAIL_APP_PASSWORD` in `.env.local` and in the Vercel environment variables
 
 **Recipients are not hardcoded** — they live in `report_settings.draft_recipients` and are
-edited from the Settings page (admin only).
+edited from the Settings page (admin only), as many addresses as needed, one per line or
+comma-separated (`parseAddresses()` in `app/actions/settings.ts` splits on whitespace,
+commas *and* semicolons, so any mix of the three works) - verified end to end with a mixed
+"a@x.com, b@x.com,c@x.com" string coming back out as three clean addresses.
 
 Worth knowing: Gmail allows roughly 500 messages a day, far more than needed, and mail from
 a `@gmail.com` address can land in a corporate spam folder — the first one may need to be
@@ -343,9 +377,11 @@ days fewer) — a bare list of every day back to the start would be mostly empty
 scroll past. A calendar answers "was anything logged this week" at a glance and only opens
 the detail for a day that actually has something to look at.
 
-Report emails link to the specific date's `/day` page (`lib/report/email.ts`'s `dayUrl()`),
-not to the dashboard — the reviewer clicking "Open in the app" wants that day's rows to fix,
-not a calendar to page through first.
+Report emails link to the specific date's `/day` page for a single-day report, or to the
+dashboard's month view for a monthly one (`lib/report/email.ts`'s `reportAppUrl(from, to)`,
+which picks based on whether `from === to`) — a reviewer clicking "Open in the app" on a
+daily report wants that day's rows to fix; on a monthly one there is no single `/day` that
+represents a whole month, so it opens the calendar on the right month instead.
 
 ---
 
@@ -450,7 +486,9 @@ Done:
   logged in `report_runs`
 - the schedule — `pg_cron` every 15 min into `/api/cron/daily-report`, which closes open
   visits and then sends if the report is due
-- Settings page (admin) — recipient, send time, send days, and the two toggles
+- Settings page (admin) — recipients (comma or newline separated), send time, **daily or
+  monthly frequency** with the matching day-of-week / day-of-month picker, and the two
+  toggles
 - date navigation (`/day?date=...`) — the board can be walked back to any past day to log a
   backdated visit, with Check out now and the empty-Time-in prefill both gated to today
 - per-visit approval (`approver_name`, `approved_on`) with multi-select bulk actions to set
@@ -465,6 +503,12 @@ Done:
   `lib/theme-script.ts`)
 - the layout/page data split (`board-data-context.tsx`) so paging between days only re-runs
   the two queries that actually depend on the date
+- the Add/Edit sheet can only be dismissed with Cancel or Close — clicking the backdrop or
+  pressing Escape used to discard whatever had been typed with no confirmation; neither does
+  anything now (verified: both fire with the form full of text, the dialog stays open and
+  the text survives; Cancel still closes it normally)
+- "Select: not checked out" alongside the existing all / awaiting-approval quick-selects, for
+  bulk-approving everyone still on site without hand-picking rows
 
 Verified end to end against the live database and the running app: creating a visit with a
 vehicle brand and an approver, the "awaiting → approved" bulk flow (including the server

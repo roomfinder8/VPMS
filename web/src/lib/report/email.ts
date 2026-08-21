@@ -226,16 +226,21 @@ export function reportFilename(from: string, to: string): string {
 }
 
 /**
- * The "Open in the app" link for a report email - the specific day's detail
- * page, not just the app root (which is the calendar dashboard, not
- * anywhere a reviewer could fix a row from). Returns undefined when
- * NEXT_PUBLIC_APP_URL isn't set, matching how the rest of the email already
- * treats a missing appUrl as "omit the link".
+ * The "Open in the app" link for a report email. A single day (from === to,
+ * the daily case) links straight to that day's detail page, where a reviewer
+ * can actually fix a row. A range (the monthly case) links to the dashboard's
+ * month view for the month it starts in instead - there is no one `/day` page
+ * that represents a whole month. Returns undefined when NEXT_PUBLIC_APP_URL
+ * isn't set, matching how the rest of the email already treats a missing
+ * appUrl as "omit the link".
  */
-export function dayUrl(date: string): string | undefined {
+export function reportAppUrl(from: string, to: string): string | undefined {
   const base = process.env.NEXT_PUBLIC_APP_URL;
   if (!base) return undefined;
-  return `${base.replace(/\/+$/, "")}/day?date=${date}`;
+  const root = base.replace(/\/+$/, "");
+  return from === to
+    ? `${root}/day?date=${from}`
+    : `${root}/?view=month&date=${from}`;
 }
 
 export function reportValueTotal(rows: ReportRow[]): number {

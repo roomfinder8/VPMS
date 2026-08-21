@@ -3,12 +3,14 @@
 import { revalidatePath } from "next/cache";
 import { getCurrentProfile, isAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import type { ActionResult } from "@/lib/types";
+import type { ActionResult, ReportFrequency } from "@/lib/types";
 
 export interface ReportSettingsInput {
   recipients: string;
   sendTime: string;
+  frequency: ReportFrequency;
   sendDays: number[];
+  sendDayOfMonth: number;
   autoSendEnabled: boolean;
   autoCloseOpenVisits: boolean;
 }
@@ -50,12 +52,24 @@ export async function updateReportSettings(
     return fail("Send time must look like 17:30");
   }
 
+  if (input.frequency !== "daily" && input.frequency !== "monthly") {
+    return fail("Invalid frequency");
+  }
+
   const days = [...new Set(input.sendDays)].sort((a, b) => a - b);
   if (days.some((d) => d < 1 || d > 7)) {
     return fail("Invalid day selection");
   }
-  if (input.autoSendEnabled && days.length === 0) {
+  if (
+    input.autoSendEnabled &&
+    input.frequency === "daily" &&
+    days.length === 0
+  ) {
     return fail("Pick at least one day, or switch automatic sending off");
+  }
+
+  if (!Number.isInteger(input.sendDayOfMonth) || input.sendDayOfMonth < 1 || input.sendDayOfMonth > 28) {
+    return fail("Day of month must be between 1 and 28");
   }
 
   const supabase = await createClient();
@@ -64,7 +78,9 @@ export async function updateReportSettings(
     .update({
       draft_recipients: recipients,
       send_time: input.sendTime,
+      frequency: input.frequency,
       send_days: days,
+      send_day_of_month: input.sendDayOfMonth,
       auto_send_enabled: input.autoSendEnabled,
       auto_close_open_visits: input.autoCloseOpenVisits,
     })
