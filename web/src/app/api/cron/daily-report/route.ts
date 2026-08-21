@@ -1,5 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isoDayOfWeek, nowHHmm, todayKey } from "@/lib/tz";
+import { dayUrl } from "@/lib/report/email";
 import { sendReport } from "@/lib/report/send-report";
 import type { ReportSettings } from "@/lib/types";
 
@@ -172,7 +173,7 @@ async function handle(request: Request) {
       from: date,
       to: date,
       recipients: settings.draft_recipients,
-      appUrl: process.env.NEXT_PUBLIC_APP_URL,
+      appUrl: dayUrl(date),
     });
 
     await admin.from("report_runs").insert({

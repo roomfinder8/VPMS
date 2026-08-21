@@ -157,6 +157,28 @@ export function startOfMonth(dateKey: string): string {
   return `${dateKey.slice(0, 7)}-01`;
 }
 
+/** Same day next/previous month, clamped to the last real day if the target month is shorter */
+export function addMonths(dateKey: string, months: number): string {
+  const d = new Date(`${dateKey}T12:00:00${TZ_OFFSET}`);
+  const day = d.getUTCDate();
+  d.setUTCDate(1);
+  d.setUTCMonth(d.getUTCMonth() + months);
+  const lastDay = new Date(
+    Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0),
+  ).getUTCDate();
+  d.setUTCDate(Math.min(day, lastDay));
+  return dateKeyOf(d);
+}
+
+/** 'August 2026' */
+export function monthLabel(dateKey: string): string {
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: TZ,
+    month: "long",
+    year: "numeric",
+  }).format(new Date(`${dateKey}T12:00:00${TZ_OFFSET}`));
+}
+
 /** Whole days between two date keys, inclusive of both ends */
 export function daysBetween(from: string, to: string): number {
   const a = new Date(`${from}T12:00:00${TZ_OFFSET}`).getTime();

@@ -33,7 +33,7 @@ export default async function SettingsPage() {
     <div className="flex flex-col gap-5">
       <div>
         <Link
-          href="/"
+          href="/day"
           className="text-sm text-ink-faint underline underline-offset-2"
         >
           ← Back to today

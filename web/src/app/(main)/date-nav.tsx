@@ -1,6 +1,7 @@
 "use client";
 
 import { useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { addDays } from "@/lib/tz";
 
@@ -10,10 +11,10 @@ interface Props {
 }
 
 /**
- * Jumps between days by pushing ?date=YYYY-MM-DD, or the bare "/" for today so
- * the common case keeps a clean URL. Forward is capped at today - there are
- * never visits to show for a future date, and allowing it would only invite a
- * mistyped year to go unnoticed.
+ * Jumps between days by pushing /day?date=YYYY-MM-DD, or /day on its own for
+ * today so the common case keeps a clean URL. Forward is capped at today -
+ * there are never visits to show for a future date, and allowing it would
+ * only invite a mistyped year to go unnoticed.
  *
  * Wrapped in useTransition so a click gets an immediate visual response (the
  * controls dim, the date header shows a spinner) instead of the page looking
@@ -29,7 +30,7 @@ export function DateNav({ date, today }: Props) {
 
   function go(next: string) {
     startTransition(() => {
-      router.push(next === today ? "/" : `/?date=${next}`);
+      router.push(next === today ? "/day" : `/day?date=${next}`);
     });
   }
 
@@ -37,6 +38,17 @@ export function DateNav({ date, today }: Props) {
     <div
       className={`flex items-center gap-1.5 transition-opacity ${isPending ? "opacity-60" : ""}`}
     >
+      <Link
+        href="/"
+        aria-label="Back to dashboard"
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-line
+                   text-ink-soft transition hover:bg-surface active:scale-[0.98]"
+      >
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2">
+          <rect x="3" y="5" width="18" height="16" rx="2" />
+          <path strokeLinecap="round" d="M3 10h18M8 3v4M16 3v4" />
+        </svg>
+      </Link>
       <button
         type="button"
         aria-label="Previous day"

@@ -13,6 +13,16 @@
   --color-brand-soft: var(--brand-soft);
 }
 
+/*
+ * Theme tokens, three layers, later wins:
+ *   1. :root                                    - light, the default
+ *   2. @media prefers-color-scheme: dark          - system says dark, and the
+ *      user has not explicitly chosen light on this device
+ *   3. :root[data-theme="dark" | "light"]         - the toggle in the header
+ *      (theme-toggle.tsx) always wins once the visitor has pressed it; the
+ *      choice is persisted to localStorage and re-applied before paint by
+ *      the script in lib/theme-script.ts, so there is no flash on reload.
+ */
 :root {
   --surface: #f5f6f8;
   --raised: #ffffff;
@@ -25,7 +35,7 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --surface: #0e1013;
     --raised: #16191e;
     --ink: #eceef2;
@@ -35,6 +45,17 @@
     --brand: #4d8dff;
     --brand-soft: #16233a;
   }
+}
+
+:root[data-theme="dark"] {
+  --surface: #0e1013;
+  --raised: #16191e;
+  --ink: #eceef2;
+  --ink-soft: #a4a9b4;
+  --ink-faint: #6e7480;
+  --line: #262a31;
+  --brand: #4d8dff;
+  --brand-soft: #16233a;
 }
 
 body {
@@ -47,14 +68,23 @@ body {
  * Native form controls (the calendar icon on <input type="date">, the clock
  * icon on <input type="time">) are drawn by the browser itself and otherwise
  * default to a dark icon, which disappears against this app's dark theme.
- * "light dark" tells the browser both palettes exist and to pick the one
- * matching the user's system/browser preference - the same signal this
- * stylesheet already follows via prefers-color-scheme, so the icon always
- * lands on the readable colour.
+ * Default to "light dark" (follow the system), then pin it explicitly once
+ * data-theme says the toggle has been used - otherwise the icon could follow
+ * the OS while the rest of the page follows the toggle.
  */
 input[type="date"],
 input[type="time"] {
   color-scheme: light dark;
+}
+
+:root[data-theme="dark"] input[type="date"],
+:root[data-theme="dark"] input[type="time"] {
+  color-scheme: dark;
+}
+
+:root[data-theme="light"] input[type="date"],
+:root[data-theme="light"] input[type="time"] {
+  color-scheme: light;
 }
 
 /* Fixed-width digits so times keep their alignment and rows do not jump on re-render */

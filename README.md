@@ -173,12 +173,13 @@ no history of the earlier value; add one if it ever needs auditing.
 
 ### Backdated entries
 
-The Today board is really a **day board** — `/?date=YYYY-MM-DD` (`app/(main)/page.tsx`)
-picks which day is on screen, defaulting to and clamping at today (a future date, whether
-typed into the URL or requested past the cron's own `todayKey()`, falls back rather than
-rendering an empty "future" page). `date-nav.tsx` provides the prev/next arrows, a native
-date picker (`max` = today), and a "Today" shortcut, pushing `/?date=...` or the bare `/`
-for the common case.
+The day board lives at `/day?date=YYYY-MM-DD` (`app/(main)/day/page.tsx`), which picks which
+day is on screen, defaulting to and clamping at today (a future date, whether typed into the
+URL or requested past the cron's own `todayKey()`, falls back rather than rendering an empty
+"future" page). `date-nav.tsx` provides the prev/next arrows, a native date picker (`max` =
+today), a "Today" shortcut, and a link back to the calendar dashboard — pushing
+`/day?date=...` or the bare `/day` for the common case. See section 6 for how `/day` relates
+to the calendar at `/`.
 
 Two things change on a day that is not today:
 
@@ -313,7 +314,34 @@ and `select private.unschedule_daily_report();` to stop it. Default schedule is
 
 ---
 
-## 6. Multi-device support
+## 6. Dashboard and day view
+
+The app is split across two routes under `(main)/`:
+
+- **`/` — the dashboard** (`page.tsx` + `calendar-view.tsx`) — a week or month calendar,
+  `?view=week|month&date=YYYY-MM-DD`. Each day cell/card shows a visit count and, in week
+  view, a short preview of who visited; a day with anything not fully approved gets an
+  amber tint (month) or a dot (week) so it stands out while paging through past weeks.
+  Tapping a date goes to that day's detail. Entirely server-rendered `<Link>` navigation —
+  no client JS is needed for paging or switching views, which keeps it as simple as the
+  rest of the app.
+- **`/day?date=YYYY-MM-DD` — the day board** (`day/page.tsx`, unchanged from when this was
+  the app's only view) — add / edit / check out / bulk-approve, the report card, the export
+  panel. `DateNav` here still steps a single day at a time and links back to the dashboard
+  with a small calendar icon.
+
+This split exists because daily volume is genuinely small (a handful of visits a day, most
+days fewer) — a bare list of every day back to the start would be mostly empty rows to
+scroll past. A calendar answers "was anything logged this week" at a glance and only opens
+the detail for a day that actually has something to look at.
+
+Report emails link to the specific date's `/day` page (`lib/report/email.ts`'s `dayUrl()`),
+not to the dashboard — the reviewer clicking "Open in the app" wants that day's rows to fix,
+not a calendar to page through first.
+
+---
+
+## 7. Multi-device support
 
 The secretary works at a desk but walks over to the stamping device, so logging from a
 phone has to work properly.
@@ -335,11 +363,24 @@ phone has to work properly.
 The UI is English, but visitor and company names are frequently typed in Thai, so the font
 (Noto Sans Thai) deliberately covers both scripts.
 
+### Dark / light toggle
+
+Follows `prefers-color-scheme` by default; `theme-toggle.tsx` (header, next to Sign out)
+lets a visitor override it explicitly. Three CSS layers in `globals.css`, later wins:
+`:root` (light, the default) → `@media (prefers-color-scheme: dark)` scoped with
+`:not([data-theme="light"])` → `:root[data-theme="dark" | "light"]`, which the toggle sets
+and always wins once pressed. The choice is written to `localStorage` and re-applied by a
+blocking inline script (`lib/theme-script.ts`, injected in the root `layout.tsx`'s `<head>`)
+that runs before hydration, so there is no flash of the wrong theme on reload — verified by
+toggling, reloading, and reading `data-theme` straight back off `<html>`. The native
+date/time icon `color-scheme` (above) is pinned the same way, so the toggle flips those too
+rather than leaving them following the OS while the rest of the page follows the override.
+
 ### Why date navigation doesn't refetch everything
 
 `(main)/layout.tsx` fetches everything that does **not** depend on which day is on screen —
 validation types, hosts, companies, vehicle brands, approver names, report settings — once,
-and hands it down through `board-data-context.tsx` (`useBoardData()`). `(main)/page.tsx`
+and hands it down through `board-data-context.tsx` (`useBoardData()`). `(main)/day/page.tsx`
 only fetches the two queries that actually vary with the date: `visits` and `report_runs`.
 
 This matters because Next.js does not re-render a layout just because the page's
@@ -358,7 +399,7 @@ than just trusting a cookie (see the comment in `proxy.ts`).
 
 ---
 
-## 7. Running it
+## 8. Running it
 
 ```bash
 cd web && npm install && npm run dev
@@ -380,7 +421,7 @@ Before the first run:
 
 ---
 
-## 8. Status
+## 9. Status
 
 Done:
 
@@ -402,26 +443,35 @@ Done:
 - the schedule — `pg_cron` every 15 min into `/api/cron/daily-report`, which closes open
   visits and then sends if the report is due
 - Settings page (admin) — recipient, send time, send days, and the two toggles
-- date navigation (`/?date=...`) — the board can be walked back to any past day to log a
+- date navigation (`/day?date=...`) — the board can be walked back to any past day to log a
   backdated visit, with Check out now and the empty-Time-in prefill both gated to today
 - per-visit approval (`approver_name`, `approved_on`) with multi-select bulk actions to set
   an approver or an approval date across several rows at once, and vehicle brand as a
-  free-text field alongside the licence plate
+  free-text field alongside the licence plate — the Approval fields are always visible on
+  the form (no collapse/expand to fight with), and the autocomplete list is seeded from
+  whatever has actually been typed before
+- the calendar dashboard (`/`, week or month, `calendar-view.tsx`) — tap a date to open its
+  `/day` detail; days with anything unapproved are flagged directly on the grid
+- dark/light toggle in the header, persisted and flash-free on reload (`theme-toggle.tsx`,
+  `lib/theme-script.ts`)
+- the layout/page data split (`board-data-context.tsx`) so paging between days only re-runs
+  the two queries that actually depend on the date
 
 Verified end to end against the live database and the running app: creating a visit with a
 vehicle brand and an approver, the "awaiting → approved" bulk flow (including the server
 rejecting a bulk approval date for a row with no approver set), the approver-swap bulk
 action leaving an existing `approved_on` untouched, backdated entry with no quick
-check-out button, and the Excel/email output for all of it.
+check-out button, the Excel/email output for all of it, the calendar's counts and
+needs-attention flags against real inserted rows, and the theme toggle surviving a reload.
 
 Not built yet:
 
-- History / search across past days (date navigation covers one day at a time; there is no
-  cross-day search or filter view yet)
+- Search/filter within a day or across days by name, company or plate — the calendar covers
+  "what happened when", not "find this specific visitor"
 - Settings for validation types and hosts (still SQL-only)
 - user management (accounts are created in the Supabase dashboard)
 
-## 9. Open questions
+## 10. Open questions
 
 - [ ] how many validation codes the MeeSoft device really has, and the value of each —
       needs building management

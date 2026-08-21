@@ -225,6 +225,19 @@ export function reportFilename(from: string, to: string): string {
   return `VPMS-ETTP-visitors-${suffix}.xlsx`;
 }
 
+/**
+ * The "Open in the app" link for a report email - the specific day's detail
+ * page, not just the app root (which is the calendar dashboard, not
+ * anywhere a reviewer could fix a row from). Returns undefined when
+ * NEXT_PUBLIC_APP_URL isn't set, matching how the rest of the email already
+ * treats a missing appUrl as "omit the link".
+ */
+export function dayUrl(date: string): string | undefined {
+  const base = process.env.NEXT_PUBLIC_APP_URL;
+  if (!base) return undefined;
+  return `${base.replace(/\/+$/, "")}/day?date=${date}`;
+}
+
 export function reportValueTotal(rows: ReportRow[]): number {
   return rows.reduce((sum, r) => sum + (toNumber(r.value_baht) ?? 0), 0);
 }

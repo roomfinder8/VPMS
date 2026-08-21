@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Noto_Sans_Thai } from "next/font/google";
+import { THEME_INIT_SCRIPT } from "@/lib/theme-script";
 import "./globals.css";
 
 // The interface is English, but visitor and company names are often typed in Thai,
@@ -25,7 +26,18 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={`${notoThai.variable} h-full antialiased`}>
+    <html
+      lang="en"
+      className={`${notoThai.variable} h-full antialiased`}
+      // The theme-init script sets data-theme itself before hydration; without
+      // this, React would flag that as a server/client markup mismatch.
+      suppressHydrationWarning
+    >
+      <head>
+        {/* Runs before paint so a stored dark/light choice never flashes the
+            other theme first. See lib/theme-script.ts. */}
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+      </head>
       <body className="font-sans min-h-full flex flex-col">{children}</body>
     </html>
   );

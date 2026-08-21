@@ -69,14 +69,6 @@ export function VisitSheet({
     (t) => t.id === values.validationTypeId,
   );
 
-  // Collapsed for a brand-new entry (there is never an approval date to show
-  // yet); expanded automatically when editing, or the moment a validation
-  // error lands inside it - never hidden with the message still showing.
-  const approvalFieldError =
-    errorField === "approverName" || errorField === "approvedOn";
-  const [approvalOpenState, setApprovalOpenState] = useState(isEdit);
-  const approvalOpen = approvalOpenState || approvalFieldError;
-
   const currentApprovalStatus = approvalStatus({
     approver_name: values.approverName || null,
     approved_on: values.approvedOn || null,
@@ -375,66 +367,52 @@ export function VisitSheet({
 
           {/* ===== Approval ===== */}
           <div className="flex flex-col gap-4 border-t border-line pt-5">
-            <button
-              type="button"
-              onClick={() => setApprovalOpenState((v) => !v)}
-              aria-expanded={approvalOpen}
-              className="flex w-full items-center justify-between text-left"
-            >
+            <div className="flex w-full items-center justify-between">
               <GroupLabel>Approval</GroupLabel>
-              <span className="flex items-center gap-2 text-xs text-ink-faint">
+              <span className="text-xs text-ink-faint">
                 {APPROVAL_STATUS_LABEL[currentApprovalStatus]}
-                <span
-                  className={`inline-block transition-transform ${approvalOpen ? "rotate-180" : ""}`}
-                >
-                  ▾
+              </span>
+            </div>
+
+            <label className="flex flex-col gap-1.5">
+              <span className="text-sm text-ink-soft">
+                Approver <span className="text-ink-faint">(optional)</span>
+              </span>
+              <input
+                value={values.approverName}
+                onChange={(e) => set("approverName", e.target.value)}
+                list={approverListId}
+                placeholder="Who is expected to approve this"
+                className={`${inputClass} ${ring("approverName")}`}
+              />
+              <datalist id={approverListId}>
+                {approverNames.map((n) => (
+                  <option key={n} value={n} />
+                ))}
+              </datalist>
+              {errorField === "approverName" && (
+                <span className="text-xs text-red-600">{error}</span>
+              )}
+            </label>
+
+            <label className="flex flex-col gap-1.5">
+              <span className="text-sm text-ink-soft">
+                Approved on{" "}
+                <span className="text-ink-faint">
+                  (fill in once the head confirms)
                 </span>
               </span>
-            </button>
-
-            {approvalOpen && (
-              <>
-                <label className="flex flex-col gap-1.5">
-                  <span className="text-sm text-ink-soft">
-                    Approver <span className="text-ink-faint">(optional)</span>
-                  </span>
-                  <input
-                    value={values.approverName}
-                    onChange={(e) => set("approverName", e.target.value)}
-                    list={approverListId}
-                    placeholder="Who is expected to approve this"
-                    className={`${inputClass} ${ring("approverName")}`}
-                  />
-                  <datalist id={approverListId}>
-                    {approverNames.map((n) => (
-                      <option key={n} value={n} />
-                    ))}
-                  </datalist>
-                  {errorField === "approverName" && (
-                    <span className="text-xs text-red-600">{error}</span>
-                  )}
-                </label>
-
-                <label className="flex flex-col gap-1.5">
-                  <span className="text-sm text-ink-soft">
-                    Approved on{" "}
-                    <span className="text-ink-faint">
-                      (fill in once the head confirms)
-                    </span>
-                  </span>
-                  <input
-                    type="date"
-                    value={values.approvedOn}
-                    min={values.visitDate}
-                    onChange={(e) => set("approvedOn", e.target.value)}
-                    className={`${inputClass} tabular ${ring("approvedOn")}`}
-                  />
-                  {errorField === "approvedOn" && (
-                    <span className="text-xs text-red-600">{error}</span>
-                  )}
-                </label>
-              </>
-            )}
+              <input
+                type="date"
+                value={values.approvedOn}
+                min={values.visitDate}
+                onChange={(e) => set("approvedOn", e.target.value)}
+                className={`${inputClass} tabular ${ring("approvedOn")}`}
+              />
+              {errorField === "approvedOn" && (
+                <span className="text-xs text-red-600">{error}</span>
+              )}
+            </label>
           </div>
 
           {error &&

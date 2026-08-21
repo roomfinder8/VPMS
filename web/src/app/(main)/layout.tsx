@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { canEdit, getCurrentProfile, isAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
@@ -11,6 +12,7 @@ import {
 import { SUGGESTED_VEHICLE_BRANDS } from "@/lib/vehicle-brands";
 import { logout } from "../login/actions";
 import { BoardDataProvider } from "./board-data-context";
+import { ThemeToggle } from "./theme-toggle";
 
 const ROLE_LABEL: Record<string, string> = {
   admin: "Administrator",
@@ -112,14 +114,14 @@ export default async function MainLayout({ children }: LayoutProps<"/">) {
       <div className="flex min-h-full flex-col">
         <header className="sticky top-0 z-30 border-b border-line bg-raised/85 backdrop-blur">
           <div className="mx-auto flex h-14 max-w-5xl items-center gap-3 px-4">
-            <div className="min-w-0 flex-1">
+            <Link href="/" className="min-w-0 flex-1">
               <p className="truncate text-sm font-semibold leading-tight">
                 Visitor Parking Management
               </p>
               <p className="truncate text-xs text-ink-faint leading-tight">
                 ETTP Unit
               </p>
-            </div>
+            </Link>
 
             <div className="hidden text-right sm:block">
               <p className="text-sm leading-tight">{profile.full_name}</p>
@@ -127,6 +129,8 @@ export default async function MainLayout({ children }: LayoutProps<"/">) {
                 {ROLE_LABEL[profile.role] ?? profile.role}
               </p>
             </div>
+
+            <ThemeToggle />
 
             <form action={logout}>
               <button

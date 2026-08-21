@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { canEdit, getCurrentProfile } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { dayUrl } from "@/lib/report/email";
 import { sendReport } from "@/lib/report/send-report";
 import type { ActionResult, ReportSettings } from "@/lib/types";
 
@@ -53,7 +54,7 @@ export async function sendReportNow(date: string): Promise<ActionResult> {
       to: date,
       recipients,
       senderName: profile.full_name,
-      appUrl: process.env.NEXT_PUBLIC_APP_URL,
+      appUrl: dayUrl(date),
     });
 
     await supabase.from("report_runs").insert({
